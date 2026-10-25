@@ -1,0 +1,794 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>LeakTrace · Yeşilova</title>
+<style>
+:root{--bg:#F3F5FA;--surface:#FFFFFF;--ink:#18213A;--muted:#5B6683;--line:#DCE1EC;--accent:#B4357E;--good:#1F8A6B;--chg:#2F6FDB;
+--mapbg:#10133A;--thermal:linear-gradient(90deg,#2E2F86,#6A2F8C,#B4357E,#EE7E3F,#FFD97A);
+font-family:Arial,"Helvetica Neue",Helvetica,sans-serif;color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#121831;--surface:#1A2242;--ink:#EEF1F8;--muted:#A7B0CA;--line:#2C3660;--good:#4CC39C;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#121831;--surface:#1A2242;--ink:#EEF1F8;--muted:#A7B0CA;--line:#2C3660;--good:#4CC39C;color-scheme:dark}
+*,*::before,*::after{box-sizing:inherit}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--ink);font-size:15px;line-height:1.45;display:flex;flex-direction:column}
+.page{display:none;flex:1;min-height:0;overflow-y:auto}
+.page.on{display:block}
+#p-harita.on{display:flex;flex-direction:column;overflow:hidden}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--surface)}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:3px solid #3E7BD6;outline-offset:2px}
+header.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:8;background:var(--surface);border-bottom:1px solid var(--line);padding:10px 16px;display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center}
+.brand{display:flex;align-items:center;gap:9px;font-weight:700;font-size:19px}
+.brand i{width:22px;height:22px;border-radius:50%;background:var(--thermal)}
+.brand small{font-weight:400;color:var(--muted);font-size:14px}
+.seg{display:flex;border:1.5px solid var(--line);border-radius:999px;overflow:hidden}
+.seg button{border:0;background:transparent;padding:7px 14px;font-size:14px;color:var(--muted)}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--surface)}
+.grp{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted)}
+.chk{display:flex;align-items:center;gap:6px;font-size:14px;color:var(--ink)}
+.banner{background:var(--bg);color:var(--muted);font-size:13px;padding:7px 16px;border-bottom:1px solid var(--line)}
+main{position:relative;flex:1;display:grid;grid-template-columns:330px 1fr 380px;grid-template-rows:minmax(0,1fr);min-height:0;overflow:hidden}
+main.lclosed{grid-template-columns:0 1fr 380px}
+#left,#panel,#map{min-height:0;height:100%}
+#left{grid-column:1;grid-row:1}#map{grid-column:2;grid-row:1}#panel{grid-column:3;grid-row:1}
+.scrollbox{max-height:280px;overflow-y:auto;overflow-x:hidden;padding-right:4px;margin-top:6px}
+#left,#panel{overflow-x:hidden}
+.item{min-width:0;max-width:100%;width:auto!important;align-self:stretch;margin:0}
+.item>span:first-child{flex:1 1 auto;min-width:0;overflow-wrap:anywhere}
+.item>span:last-child:not(:first-child){flex:0 1 auto;max-width:45%;text-align:right;overflow-wrap:anywhere}
+.item>.bar,.item>.chip{flex:0 0 auto}
+.item>.bar{width:70px}
+#left{background:var(--surface);border-right:1px solid var(--line);overflow-y:auto;overscroll-behavior:contain;padding:16px 18px 24px}
+main.lclosed #left{display:none}
+#map{position:relative;background:var(--mapbg);overflow:hidden}
+#panel{background:var(--surface);border-left:1px solid var(--line);overflow-y:auto;overscroll-behavior:contain;padding:18px 20px 28px}
+.ov{position:absolute;z-index:5}
+.legend{left:14px;bottom:14px;background:rgba(16,19,58,.88);color:#E8E9FF;padding:10px 12px;border-radius:12px;font-size:12px;max-width:260px}
+.legend b{display:block;height:10px;border-radius:5px;background:var(--thermal);margin:6px 0 4px}
+.legend .row{display:flex;justify-content:space-between}
+.sw{display:inline-block;width:12px;height:12px;border-radius:3px;vertical-align:-2px;margin-right:6px}
+.tools{left:14px;top:14px;display:flex;flex-direction:column;gap:8px;align-items:flex-start}
+.tbtn{display:flex;align-items:center;gap:8px;background:rgba(16,19,58,.88);color:#E8E9FF;border:1.5px solid rgba(232,233,255,.25);border-radius:12px;padding:8px 11px;font-size:13px;max-width:290px;text-align:left}
+.tbtn[aria-pressed="true"]{border-color:#FFD97A;color:#FFD97A}
+.tbtn svg{flex:0 0 22px}
+.hint{background:rgba(16,19,58,.88);color:#C9CBEA;border-radius:10px;padding:7px 10px;font-size:12px;max-width:290px}
+.err{inset:0;display:none;align-items:center;justify-content:center;color:#E8E9FF;padding:30px;text-align:center}
+h2{font-size:20px;margin:0 0 4px} h3{font-size:15px;margin:18px 0 8px} p{margin:0 0 10px}
+.muted{color:var(--muted)}
+.big{font-size:56px;font-weight:700;line-height:1}
+.scale{height:12px;border-radius:6px;background:var(--thermal);position:relative;margin:12px 0 4px}
+.scale.rev,.legend b.rev{background:linear-gradient(90deg,rgb(214,69,69),rgb(233,180,76),rgb(58,157,93))}
+.scale span{position:absolute;top:-5px;width:4px;height:22px;background:var(--ink);border-radius:2px;transform:translateX(-50%)}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:5px 14px;font-size:14px}
+.kv dt{color:var(--muted)} .kv dd{margin:0}
+.tag{display:inline-block;font-size:12px;font-weight:700;padding:3px 9px;border-radius:999px;background:var(--bg)}
+.tag.y{background:color-mix(in srgb,var(--good) 18%,transparent);color:var(--good)}
+.tag.c{background:color-mix(in srgb,var(--chg) 22%,transparent)}
+.note{border-left:3px solid var(--muted);background:var(--bg);padding:9px 12px;border-radius:0 8px 8px 0;font-size:13.5px;margin:10px 0}
+.list{display:flex;flex-direction:column;gap:6px}
+.item{display:flex;justify-content:space-between;gap:10px;align-items:center;border:1.5px solid var(--line);background:var(--surface);border-radius:10px;padding:8px 10px;text-align:left;font-size:14px;width:100%}
+.item[aria-pressed="true"]{border-color:var(--ink)}
+.chip{font-weight:700;font-size:13px;min-width:34px;text-align:center;padding:2px 6px;border-radius:6px;color:#18213A}
+.bar{height:8px;border-radius:4px;background:var(--bg);position:relative;flex:0 0 80px}
+.bar i{position:absolute;top:0;bottom:0;left:0;border-radius:4px;background:var(--muted)}
+.stat{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:12px 0}
+.stat div{background:var(--bg);border-radius:10px;padding:10px}
+.stat strong{display:block;font-size:22px} .stat span{font-size:12.5px;color:var(--muted)}
+.back{border:0;background:none;color:var(--muted);padding:0;margin-bottom:10px;font-size:14px}
+.search{width:100%;padding:10px 12px;border:1.5px solid var(--line);border-radius:10px;background:var(--bg)}
+fieldset{border:0;padding:0;margin:14px 0 0} legend{font-weight:700;font-size:13.5px;margin-bottom:6px}
+.opts{display:flex;flex-wrap:wrap;gap:6px 12px;font-size:14px}
+.rng{display:flex;gap:8px;align-items:center;font-size:14px}
+.rng input{width:64px;padding:6px 8px;border:1.5px solid var(--line);border-radius:8px;background:var(--bg)}
+.small{font-size:13px}
+.thr{background:var(--bg);border-radius:12px;padding:14px;margin:12px 0}.thr label{display:block;margin:8px 0}.thr input[type=range]{width:100%;margin-top:4px}
+.nline{position:relative;height:16px;border-radius:8px;background:var(--bg);margin:58px 0 46px}
+.nline .band{position:absolute;top:0;bottom:0;background:color-mix(in srgb,var(--ink) 18%,transparent);border-radius:8px}
+.nline .med{position:absolute;top:-8px;bottom:-8px;width:2px;background:var(--muted)}.nline .med span{position:absolute;bottom:calc(100% + 4px);left:50%;transform:translateX(-50%);white-space:nowrap;font-size:12px;color:var(--muted);text-align:center}
+.nline .me{position:absolute;top:-4px;width:24px;height:24px;margin-left:-12px;border-radius:50%;background:var(--ink);border:3px solid var(--surface)}.nline .me span{position:absolute;top:calc(100% + 6px);left:50%;transform:translateX(-50%);white-space:nowrap;font-size:12px;text-align:center}
+.repw{display:inline-flex;align-items:center;gap:4px;position:relative}.repb{border:0;background:rgb(214,69,69);color:#fff;font-weight:700;font-size:14px;padding:7px 16px;border-radius:999px;cursor:pointer}.repb:hover{filter:brightness(.92)}
+.qm .tip.show{display:block}.repw .qm .tip{left:auto;right:0;transform:none}
+.who{display:flex;flex-direction:column}.who>p:last-child{margin-top:auto!important;padding-top:12px}
+.pbar{height:8px;background:var(--bg);border-radius:4px;overflow:hidden;margin:6px 0 14px}.pbar i{display:block;height:100%;width:0;background:var(--ink);transition:width 1.2s ease}
+.vsteps{margin:0 0 10px;padding-left:22px;font-size:15px}.vsteps li{margin:6px 0;color:var(--muted)}.vsteps li.now{color:var(--ink);font-weight:700}.vsteps li.done{color:var(--good)}.vsteps li.done::after{content:" ✓"}
+.vrow{display:flex;justify-content:space-between;gap:12px;padding:9px 0;border-bottom:1px solid var(--line);font-size:15px}.vrow:last-child{border-bottom:0}.vrow>span:last-child{text-align:right}
+.cmpbar{position:relative;height:12px;border-radius:6px;background:linear-gradient(90deg,var(--bg),var(--line),var(--bg));margin:14px 0 4px}.cmpbar::before{content:"";position:absolute;left:50%;top:-4px;bottom:-4px;width:2px;background:var(--muted)}.cmpbar span{position:absolute;top:-6px;width:16px;height:24px;border-radius:8px;background:var(--ink);transform:translateX(-50%)}
+.qm2{position:relative;display:inline-block}.qm2 .tip2{display:none;position:absolute;right:0;top:46px;width:280px;background:var(--ink);color:var(--surface);font-size:13px;line-height:1.45;padding:10px 12px;border-radius:10px;z-index:30}
+.qm2:hover .tip2,.qm2:focus-within .tip2,.qm2 .tip2.show{display:block}
+#deneBtn{border:0;cursor:pointer}
+#deneBtn .chev{display:inline-block;transition:transform .35s ease}
+#deneBtn[aria-expanded="true"] .chev{transform:rotate(180deg)}
+.deneBox{display:grid;grid-template-rows:0fr;opacity:0;transform:translateY(-8px);transition:grid-template-rows .55s ease,opacity .45s ease,transform .45s ease;margin-top:0}
+.deneBox.open{grid-template-rows:1fr;opacity:1;transform:none;margin-top:18px}
+.deneIn{overflow:hidden;display:grid;grid-template-columns:1fr 1fr;gap:14px;max-width:760px;margin:0 auto;text-align:left}
+.opt{display:flex;flex-direction:column;gap:6px;background:var(--surface);border:1.5px solid var(--line);border-radius:16px;padding:18px 20px;text-decoration:none;color:var(--ink);transition:border-color .2s,transform .2s}
+.opt:hover,.opt:focus-visible{border-color:var(--ink);transform:translateY(-2px)}
+.opt .tag{align-self:flex-start}.opt strong{font-size:18px}.opt .go{margin-top:4px;font-weight:700;font-size:14px}
+@media (max-width:700px){.deneIn{grid-template-columns:1fr}}
+@media (prefers-reduced-motion:reduce){.deneBox,#deneBtn .chev,.opt{transition:none}}
+.vlay{display:grid;grid-template-columns:340px 1fr;gap:18px;margin-top:18px;align-items:start}
+@media (max-width:860px){.vlay{grid-template-columns:1fr}}
+.hero1{padding:52px 0 26px;text-align:center}.hero1 .lede{margin-left:auto;margin-right:auto}.hero1 .ctas{justify-content:center}.heromap figcaption{text-align:left}.hero1 h1{font-size:clamp(38px,5.6vw,68px);line-height:1.02;margin:0;letter-spacing:-.02em}
+.hero1 h1 span{background:linear-gradient(90deg,rgb(214,69,69),rgb(233,180,76),rgb(58,157,93));-webkit-background-clip:text;background-clip:text;color:transparent}
+.heromap{margin:30px 0 0;background:#10133A;border-radius:22px;overflow:hidden;padding:0}.heromap canvas{display:block;width:100%;height:440px}
+.heromap figcaption{background:var(--surface);padding:10px 14px}
+.fsrc{display:block;font-size:12px;color:var(--muted);margin-top:6px;line-height:1.4}
+.srcl{margin:4px 0 14px;padding-left:20px;font-size:14px}.srcl li{margin:5px 0}.srcl a{color:var(--muted)}
+.vgrid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:20px}
+.vcard p{margin-bottom:8px}
+@media (max-width:860px){.vgrid{grid-template-columns:1fr}}
+.srow2{padding:8px 0;border-bottom:1px solid var(--line);font-size:14px}.srow2:last-child{border-bottom:0}.srow2 .tag{margin-left:4px}
+.qm{position:relative;display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;border:1.5px solid var(--muted);color:var(--muted);font-size:12px;font-weight:700;cursor:help;margin-left:6px}
+.qm .tip{display:none;position:absolute;top:28px;left:50%;transform:translateX(-50%);width:280px;background:var(--ink);color:var(--surface);font-size:13px;font-weight:400;line-height:1.45;padding:10px 12px;border-radius:10px;z-index:30;box-shadow:0 6px 20px rgba(0,0,0,.25)}
+.qm:hover .tip,.qm:focus .tip{display:block}
+.srow{display:flex;gap:8px;align-items:stretch}
+.srow .search{flex:1;min-width:0}
+.fbtn{flex:0 0 46px;display:flex;align-items:center;justify-content:center;border:1.5px solid var(--line);border-radius:10px;background:var(--bg);color:var(--ink);position:relative}
+.fbtn[aria-expanded="true"]{border-color:var(--ink)}
+.fbtn.on::after{content:"";position:absolute;top:6px;right:6px;width:8px;height:8px;border-radius:50%;background:#2F6FDB}
+.drawer{position:absolute;top:0;right:380px;bottom:0;width:360px;max-width:calc(100% - 400px);z-index:7;background:var(--surface);color:var(--ink);border-left:1px solid var(--line);box-shadow:-10px 0 30px rgba(0,0,0,.28);overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;padding:18px 20px 26px}
+.drawer .x{float:right;border:1.5px solid var(--line);background:transparent;border-radius:999px;width:34px;height:34px;font-size:18px;line-height:1}
+.lvl{font-size:26px;font-weight:700;margin:4px 0 2px}
+.bars{display:flex;align-items:flex-end;gap:3px;height:120px;margin:10px 0 4px;padding:0 2px;border-bottom:1px solid var(--line)}
+.bars i{flex:1;background:var(--muted);border-radius:2px 2px 0 0;opacity:.85}
+.bars i.w{background:var(--ink);opacity:1}
+.barlab{display:flex;justify-content:space-between;font-size:11.5px;color:var(--muted)}
+.dz{margin-top:14px;border:1.5px solid var(--line);border-radius:12px;padding:10px 12px}
+.dz summary{cursor:pointer;font-weight:700;list-style-position:inside}
+.dz[open] summary{margin-bottom:6px}
+#howBtn{border:1.5px solid var(--line);background:transparent;border-radius:999px;padding:6px 12px;font-size:14px;margin-left:auto}
+#how{position:fixed;inset:0;z-index:20;background:rgba(10,12,35,.55);display:none;align-items:flex-start;justify-content:center;padding:calc(env(safe-area-inset-top,0px) + 30px) 16px 30px;overflow-y:auto}
+#how.on{display:flex}
+#how .box{background:var(--surface);color:var(--ink);max-width:720px;width:100%;border-radius:18px;padding:26px 28px}
+#how h2{font-size:24px} #how h3{margin-top:20px}
+#how table{border-collapse:collapse;width:100%;font-size:14px} #how td{border-bottom:1px solid var(--line);padding:6px 4px;vertical-align:top}
+#how td:last-child{text-align:right;white-space:nowrap;font-weight:700}
+.close{float:right;border:1.5px solid var(--line);background:transparent;border-radius:999px;padding:5px 12px}
+#toggleLeft{border:1.5px solid var(--line);background:transparent;border-radius:999px;padding:6px 12px;font-size:14px}
+footer{font-size:11.5px;color:var(--muted);padding:6px 16px;background:var(--surface);border-top:1px solid var(--line)}
+@media (max-width:980px){.drawer{position:fixed;top:auto;left:0;right:0;bottom:0;width:auto;max-width:none;height:60vh}main,main.lclosed{grid-template-columns:1fr;grid-template-rows:auto 60vh auto;overflow:visible}#left{grid-column:1;grid-row:1}#map{grid-column:1;grid-row:2}#panel{grid-column:1;grid-row:3}#left,#panel,#map{height:auto}#map{height:60vh}#p-harita.on{overflow:auto}#left{border-right:0;border-bottom:1px solid var(--line);max-height:40vh}#panel{border-left:0;border-top:1px solid var(--line);max-height:50vh}}
+
+.navl{margin-left:auto;display:flex;gap:4px}
+.navl a{text-decoration:none;color:var(--muted);padding:7px 14px;border-radius:999px;font-weight:600;font-size:14px}
+.navl a[aria-current="page"]{background:var(--bg);color:var(--ink)}
+.toolbar{background:var(--surface);border-bottom:1px solid var(--line);padding:8px 16px;display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center}
+.wrap{max-width:1080px;margin:0 auto;padding:0 20px 60px}
+.hero{display:grid;grid-template-columns:1.05fr 1fr;gap:40px;align-items:center;padding:56px 0 30px}
+.hero h1{font-size:clamp(40px,6vw,74px);line-height:1;margin:0;letter-spacing:-.02em}
+.hero h1 span{display:block;background:var(--thermal);-webkit-background-clip:text;background-clip:text;color:transparent}
+.lede{font-size:19px;color:var(--muted);margin:20px 0 26px;max-width:46ch}
+.btn{display:inline-flex;align-items:center;gap:8px;border:0;border-radius:999px;padding:13px 24px;font-weight:700;text-decoration:none;font-size:15px}
+.btn.main{background:var(--ink);color:var(--surface)} .btn.ghost{border:1.5px solid var(--line);color:var(--ink)}
+.thermo{background:#1A1D52;border-radius:26px;overflow:hidden;aspect-ratio:5/4;margin:0;position:relative}
+.thermo svg{width:100%;height:100%;display:block}
+.thermo .tsc{position:absolute;left:16px;right:16px;bottom:14px;display:flex;align-items:center;gap:10px;color:#E8E9FF;font-size:13px}
+.thermo .tsc b{flex:1;height:8px;border-radius:4px;background:var(--thermal)}
+.facts{display:grid;grid-template-columns:repeat(3,1fr);border-top:1px solid var(--line)}
+.facts div{padding:20px 20px 0 0} .facts strong{display:block;font-size:32px}
+.sec{margin-top:64px} .sec h2{font-size:clamp(24px,3vw,32px);margin-bottom:12px}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:16px}
+.three{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-top:16px}
+.card{background:var(--surface);border-radius:18px;padding:22px}
+.card .n{font-weight:700;color:var(--accent);font-size:14px}
+.howp{max-width:760px;margin:0 auto;padding:40px 20px 60px}
+.howp h2{font-size:30px;margin-bottom:6px}
+.howp table{border-collapse:collapse;width:100%;font-size:14px} .howp td{border-bottom:1px solid var(--line);padding:7px 4px;vertical-align:top}
+.howp td:last-child{text-align:right;white-space:nowrap;font-weight:700}
+.tw{overflow-x:auto}
+@media (max-width:860px){.hero,.two,.three,.facts{grid-template-columns:1fr}.navl a{padding:7px 9px}}
+@media (prefers-reduced-motion:no-preference){.thermo .leak{animation:pulse 3.2s ease-in-out infinite}@keyframes pulse{50%{opacity:.55}}}
+</style>
+</head>
+<body>
+<header class="top"><div class="brand"><i aria-hidden="true"></i>LeakTrace</div>
+<nav class="navl" aria-label="Ana menü"><a href="#anasayfa" data-p="anasayfa">Ana sayfa</a><a href="#harita" data-p="harita">Belediye paneli</a><a href="#vatandas" data-p="vatandas">Vatandaş</a><a href="#nasil" data-p="nasil">Nasıl çalışır</a><a href="#vizyon" data-p="vizyon">Sonraki adımlar</a></nav></header>
+<div class="page" id="p-anasayfa"><div class="wrap">
+<section class="hero1">
+<h1>Görünmeyen enerji kaybını <span>haritada görün.</span></h1>
+<p class="lede">LeakTrace, kurumlarda zaten bulunan doğalgaz ve elektrik faturalarını bina kayıtlarıyla bir araya getirerek her binanın enerji verimliliğini değerlendirir ve iyileştirmenin nereden başlaması gerektiğini gösterir.</p>
+<div class="ctas" style="display:flex;gap:10px;flex-wrap:wrap"><button class="btn main" id="deneBtn" aria-expanded="false" aria-controls="deneBox">Dene</button><a class="btn ghost" href="#nasil">Nasıl çalışır</a></div>
+<div class="deneBox" id="deneBox" aria-hidden="true"><div class="deneIn">
+  <a class="opt" href="#harita"><span class="tag">Belediye</span><strong>Belediye paneli</strong><span class="muted">Mahallenin 3B haritası, en düşük verimli binalar, öncelik listesi ve iyileştirmelerin takibi.</span><span class="go">Paneli aç →</span></a>
+  <a class="opt" href="#vatandas"><span class="tag">Vatandaş</span><strong>Kendi daireni gör</strong><span class="muted">Adresini yaz, verilerini belediyeden talep et: faturaların, bina bilgilerin ve binandaki ortalamaya göre durumun.</span><span class="go">Verilerimi talep et →</span></a>
+</div></div>
+<figure class="heromap"><canvas id="heroMap" aria-label="Yeşilova'nın binaları, faturalardan hesaplanan Verimlilik Skoruna göre renklendirilmiş harita"></canvas>
+<figcaption class="muted small">Bornova Yeşilova'nın 3.121 gerçek binası, faturalardan hesaplanan Verimlilik Skoruna göre: kırmızı düşük, yeşil yüksek verimlilik. Gri binalarda faturadan analiz yapılamıyor.</figcaption></figure>
+</section>
+<div class="facts">
+<div><strong>769.000</strong><span class="muted">İzmir'de enerji performansı bilinmeyen 2000 öncesi binalarda yaşayan hane</span><em class="fsrc">TÜİK, Bina ve Konut Nitelikleri Araştırması 2021</em></div>
+<div><strong>%65,3</strong><span class="muted">Türkiye'de hane enerjisinin alan ısıtmasına giden payı</span><em class="fsrc">TÜİK, Hanehalkı Nihai Enerji Tüketim İstatistikleri 2022</em></div>
+<div><strong>~2 milyon ton</strong><span class="muted">konut doğalgaz tüketimi yalnızca %5 azalsa her yıl önlenecek CO₂</span><em class="fsrc">Hesap: 2024'te konutlarda 19 milyar m³ doğalgaz (GAZBİR) × %5 ≈ 0,95 milyar m³ ≈ 10 TWh (1 m³ ≈ 10,64 kWh) × 0,202 kg CO₂/kWh (IPCC doğalgaz emisyon katsayısı) ≈ 2 milyon ton. %5 bir varsayımdır.</em></div></div>
+<section class="sec"><h2>Görünmezden incelenebilire</h2><div class="two">
+<div class="card"><span class="tag">Bugün</span><p style="margin-top:10px">Türkiye'de 2011'den bu yana yalnızca 330 bin mevcut binaya enerji kimlik belgesi verildi. Ülkedeki toplam bina sayısının bile güncel resmi bir kaydı yok. Faturalar, bina kayıtları ve nüfus bilgisi farklı kurumlarda duruyor ve hiç bir araya getirilmiyor.</p></div>
+<div class="card"><span class="tag y">LeakTrace ile</span><p style="margin-top:10px">Belediye en düşük verimli binaları haritada görür ve inceleme ekiplerini önce oraya gönderir. Ekipler sorunun nedenini yerinde bulur ve sistemin değerlendirmesini doğrular ya da düzeltir; her inceleme sistemi daha isabetli kılar. Yapılan iyileştirmelerin etkisi de faturalardan izlenir.</p></div></div></section>
+<section class="sec"><h2>Ne yapıyor?</h2><div class="two">
+<div class="card"><div class="n">1</div><h3 style="margin-top:6px">Isıtma tipini ayırır</h3><p class="muted">Faturanın şeklinden dairenin doğalgazla mı, klimayla mı ısındığını ya da doğalgaz faturası olmadığını çıkarır. Kışın neredeyse hiç ısınmayan haneleri enerji yoksulluğu riski olarak işaretler.</p></div>
+<div class="card"><div class="n">2</div><h3 style="margin-top:6px">Binaları karşılaştırır</h3><p class="muted">Hava koşullarını ve dairenin konumunu hesaba katarak her binaya mahalle içinde bir Verimlilik Skoru verir. Skor nereye bakılması gerektiğini söyler; sorunun nedenini bulmak için yerinde inceleme gerekir.</p></div>
+<div class="card"><div class="n">3</div><h3 style="margin-top:6px">Değişimi izler</h3><p class="muted">Aynı dairelerin iki kışını karşılaştırır ve tüketimi belirgin düşen binaları olası iyileştirme olarak işaretler. Çok daireli apartmanlarda daha güvenilirdir; küçük binalarda yanlış alarm olabilir.</p></div>
+<div class="card"><div class="n">4</div><h3 style="margin-top:6px">Eksik bilgiyi tamamlar</h3><p class="muted">Kayıtlarda olmayan yapım yılını bir makine öğrenmesi modeliyle tahmin eder ve her bilginin gerçek mi tahmin mi olduğunu açıkça gösterir.</p></div></div></section>
+<section class="sec"><h2>Kimler için</h2><div class="two">
+<div class="card who"><h3>Yönetim</h3><p class="muted">Belediye ve kamu kurumları tüm binaları görür, filtreler ve öncelik listesi çıkarır.</p><p style="margin-top:12px"><a class="btn ghost" href="#harita">Belediye paneli</a></p></div>
+<div class="card who"><h3>Vatandaş</h3><p class="muted">Haritayı değil, yalnızca kendi dairesini görür: son faturaları, evinin komşularına göre ne kadar ısındığı ve neler yapabileceği. Diğer hanelerin bilgisini göremez.</p><p style="margin-top:12px"><a class="btn ghost" href="#vatandas">Vatandaş görünümü</a></p></div></div></section>
+<p class="muted small" style="margin-top:40px">Prototip: Bornova Yeşilova Mahallesi'nin 3.121 gerçek binası. Bina özellikleri gerçek (İBB, OpenStreetMap); faturalar ve haneler gerçek ölçümlere göre kalibre edilmiş sentetik veridir.</p>
+</div></div>
+<div class="page" id="p-harita"><div class="toolbar">
+    <button id="toggleLeft" aria-expanded="true">☰ Arama paneli</button>
+  <div class="grp" id="layerGrp">Katman
+    <div class="seg" id="layers" role="group" aria-label="Katman seçimi">
+      <button data-l="skor" aria-pressed="true">Verimlilik skoru</button><button data-l="deg" aria-pressed="false">Son kış değişimi</button>
+    </div><span class="qm" tabindex="0" role="button" aria-label="Son kış değişimi nedir?">?<span class="tip" role="tooltip">2022/23 ve 2023/24 kışlarını karşılaştırır. Hava farkı düzeltildikten sonra, taşınma olmayan dairelerde ısınma tüketimi belirgin şekilde düşen binalar mavi gösterilir (varsayılan: en az 2 dairede %20; eşik sağ panelden değiştirilebilir). Bu büyük ihtimalle mantolama, pencere ya da kombi yenilemesi demektir. Gerçek sistemde her kış bir önceki kışla karşılaştırılır.</span></span></div>
+  <label class="chk"><input type="checkbox" id="d3" checked> 3B</label>
+  <span class="chk" id="simLbl"><label class="chk"><input type="checkbox" id="sim"> Simülasyon doğrulaması</label><span class="qm" tabindex="0" role="button" aria-label="Simülasyon doğrulaması nedir?">?<span class="tip" role="tooltip">Simülasyonda 2023'te gerçekten mantolanan binaları beyaz çerçeveyle gösterir. Model bu bilgiyi görmez, yalnızca faturalardan tahmin yapar. Mavi binalar (modelin tahmini) ile beyaz çerçeveler (gerçek cevap) üst üste geliyorsa model doğru bulmuş demektir. Gerçek sistemde bu cevap bilinmez.</span></span></span>
+</div>
+<main id="main">
+  
+  <aside id="left" aria-label="Arama ve filtreler"></aside>
+  <div id="map">
+    <div class="ov err" id="err">Harita yüklenemedi. Tarayıcınız WebGL desteklemiyor olabilir.</div>
+    <div class="ov tools">
+      <button class="tbtn" id="rotBtn" aria-pressed="false" title="Döndürme modu">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 4v5h-5"/></svg>
+        <span>Çevirmek için tekerleğe (orta tuş) basılı tutup sürükleyin ya da buraya basın</span></button>
+      <button class="tbtn" id="resetBtn"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg><span>Görünümü sıfırla</span></button>
+      <div class="hint" id="rotHint" hidden>Döndürme modu açık: sol tuşla sürükleyerek çevirin. Kapatmak için düğmeye tekrar basın.</div>
+    </div>
+    <div class="ov legend" id="legend"></div>
+  </div>
+  
+  
+
+  <aside id="panel" aria-live="polite"></aside>
+  <aside class="drawer" id="drawer" hidden aria-label="Daire ayrıntısı"></aside>
+</main>
+<footer><strong>Binalar gerçek, faturalar ve haneler sentetik</strong> (gerçek ölçümlere göre kalibre edilmiş simülasyon) · Veri: © OpenStreetMap katkıcıları (ODbL) · İBB Açık Veri, Bina Kimlik Belgesi (CC BY 4.0) · Open-Meteo (CC BY 4.0) · NEED 2025 (DESNZ), IDEAL (Edinburgh, CC BY 4.0)</footer></div>
+<div class="page" id="p-vatandas"><div class="wrap" style="padding-top:36px;max-width:900px">
+<h2>Verilerimi görüntüle</h2>
+<p class="muted" style="max-width:70ch">Vatandaşlar haritayı ve başka hanelerin bilgilerini göremez; yalnızca kendi dairelerinin verilerini belediyeden talep ederek görüntüleyebilir. Gerçek sistemde kimliğiniz e-Devlet ile doğrulanır ve talebiniz adres kaydınızla eşleştirilir.</p>
+<div class="card" id="vform" style="margin-top:18px">
+  <label for="vq2"><strong>Adresiniz</strong></label>
+  <input class="search" id="vq2" placeholder="Sokak ve kapı no, ör. 4037 Sokak No: 3" autocomplete="off" aria-label="Adres" style="margin-top:6px">
+  <div class="list" id="vres2" style="margin-top:8px"></div>
+  <div id="vflatWrap" hidden style="margin-top:12px"><label for="vflat"><strong>Daireniz</strong></label>
+    <select id="vflat" class="search" style="margin-top:6px"></select></div>
+  <button class="btn main" id="vreq" disabled style="margin-top:16px;border:0;cursor:pointer">Verilerimi talep et</button>
+</div>
+<div class="card" id="vload" hidden style="margin-top:18px">
+  <h3 style="margin-top:0">Talebiniz işleniyor</h3>
+  <div class="pbar"><i id="vprog"></i></div>
+  <ol class="vsteps" id="vsteps"></ol>
+  <p class="muted small">Demo: bu adımlar gerçek sistemin işleyişini canlandırır; veriler aslında tarayıcınızda hazırlanıyor.</p>
+</div>
+<div id="vout2" hidden style="margin-top:18px"></div>
+<p class="muted small" style="margin-top:26px">Faturalar ve haneler sentetiktir (gerçek ölçümlere göre kalibre edilmiş simülasyon); binalar ve bina bilgileri gerçektir.</p>
+</div></div>
+<div class="page" id="p-nasil"><div class="howp"><h2>Nasıl çalışır?</h2><p class="muted">Videoda gösterilmeyen ayrıntılar.</p><h3>Problem</h3>
+<p>İzmir'de 769 bin hane 2000 öncesi binalarda yaşıyor ve bu binaların enerji performansı bina bazında bilinmiyor. Türkiye'de 2011'den bu yana yalnızca 330 bin mevcut binaya enerji kimlik belgesi verildi. Gerekli veri aslında var, ama faturalar, bina kayıtları ve nüfus bilgisi farklı kurumlarda duruyor.</p>
+<h3>Çözüm</h3>
+<p>LeakTrace bu verileri adres koduyla, kişisel veriyi açığa çıkarmadan birleştirir ve dört iş yapar:</p>
+<p><strong>1. Hava etkisini ayıklar.</strong> Her dairenin aylık doğalgaz faturası günlük dış sıcaklıkla karşılaştırılır (PRISM yöntemi). Böylece soğuk geçen bir kış ile ısı kaçıran bir bina ayrılır.<br>
+<strong>2. Binayı benzerleriyle karşılaştırır.</strong> Dairenin konumu (en üst kat, zemin, köşe) düzeltilir, bina mahalledeki diğer binalarla sıralanır: Verimlilik Skoru (100 en verimli, 0 en çok ısı kaçıran).<br>
+<strong>3. Değişimi izler.</strong> Aynı dairelerin farklı kışları karşılaştırılır. Yalıtılan binada tüketim düşer, sistem bunu ölçüm yapılmadan fark eder. Yeni bir hane taşındığında değişim binadan değil haneden gelir.<br>
+<strong>4. Eksik bilgiyi tamamlar.</strong> Bornova'daki binaların yarısında yapım yılı kayıtlı değil; bir makine öğrenmesi modeli bunu kat sayısı, taşıyıcı sistem, yapı nizamı ve sokaktan tahmin eder. Dairelerin ısıtma tipi hiçbir kayıtta yok; sistem bunu faturanın şeklinden çıkarır.</p>
+<p>Çekirdek yöntem istatistik ve bina fiziğidir: sonuçlar açıklanabilir ve denetlenebilir. Makine öğrenmesi, kayıtlardaki boşlukları doldurmak için kullanılır.</p>
+<p><strong>Canlı hesaplama:</strong> Harita açıldığında 12.883 dairenin 36 aylık ham faturası tarayıcınızda baştan analiz edilir; ekranda gördüğünüz skorlar önceden yazılmış sonuçlar değildir. Bir binaya tıklayıp bir daire seçince o dairenin faturalarına uydurulan PRISM doğrusu grafikte görünür. Sistem dairelerin ısıtma tipini bilmez, faturanın şeklinden çıkarır.</p>
+<h3>Yapay zekâ neyi tamamlıyor, neyi tamamlayamıyor?</h3>
+<div class='tw'><table>
+<tr><td>Yapım yılı (Bornova'da binaların yarısında eksik): ortalama hata, 27.955 binada çapraz doğrulama</td><td>6,5 yıl</td></tr>
+<tr><td>Isıtma tipi (hiçbir kayıtta yok): faturanın şeklinden kural tabanlı tahmin, doğru bulma</td><td>%91</td></tr>
+<tr><td>Faturası olmayan binaların Verimlilik Skoru: kayıtlardaki bilgilerden tahmin, ortalama hata (mahalle ortalamasını söylemek: 25 puan)</td><td>24 puan</td></tr>
+</table></div>
+<p style="margin-top:10px">Son satır önemli bir bulgu: bir binanın ne kadar enerji harcadığını belirleyen en büyük iki etken, sonradan yapılan mantolama ve hanenin alışkanlıkları, hiçbir kayıtta yok. Bu yüzden kayıtlardan tahmin, neredeyse tahminsiz kalmak kadar zayıf. <strong>Faturalar olmadan bu iş yapılamaz</strong>; projenin kurumlar arası veri paylaşımına ihtiyaç duymasının nedeni bu. Eksik parçayı tamamlayabilecek yeni bir kaynak da var: mantolama kayıtlarda yok ama binanın fotoğrafında görünüyor. Cephe fotoğraflarından mantolama tespiti, sonraki adımlardan biri.</p>
+<h3>Altın standart</h3>
+<p>Her binanın açığı bir standarda göre ölçülür: binanın güncel TS 825 değerleri ve mantolamayla ulaşacağı tüketim, artı benzer hanelerin ortanca kullanımı. Standart ayarlanabilir bir politika kararıdır. Yeşilova simülasyonunda herkes bu standarda uysa doğalgaz tüketimi %19 azalır. Türkiye'de konut doğalgazının yalnızca %5'i bile yılda yaklaşık 2 milyon ton CO₂ demektir.</p>
+<h3>Ne kadar güvenilir?</h3>
+<div class='tw'><table>
+<tr><td>Gerçek evlerde (IDEAL, 183 İngiliz evi): fatura sinyali ile ölçülmüş ısı kaybı arasındaki ilişki</td><td>ρ = 0,93</td></tr>
+<tr><td>Gerçek evlerde en kötü yalıtılmış %25'i bulma (basit m² başına tüketim: %64)</td><td>%74</td></tr>
+<tr><td>Eksik yapım yılı modeli, Bornova'da 27.955 binada çapraz doğrulama (sokak ortalaması: 7,5 yıl)</td><td>6,5 yıl hata</td></tr>
+<tr><td>Simülasyonda yalıtılan binaları bulma, AUC (canlı hesap)</td><td>0,87</td></tr>
+<tr><td>Isıtma tipini faturanın şeklinden doğru bulma (doğalgaz, klima, faturasız)</td><td>%91</td></tr>
+<tr><td>Simülasyonda taşınmada hane etkisini ölçme</td><td>ρ = 0,69</td></tr>
+<tr><td>Simülasyonun gerçekçiliği: hane başına yıllık doğalgaz (İzmir 2023: 736 m³)</td><td>707 m³</td></tr>
+</table></div>
+<h3>Sınırlar</h3>
+<p>Binalar ve özellikleri gerçek (İBB Yapı Envanteri, OpenStreetMap); faturalar ve haneler sentetiktir. Tek bir dönemin faturasıyla kötü binaları bulmak sınırlı başarılı (AUC 0,61); sistem en güçlü değişimi yakalarken çalışır. Sobalı, merkezi sistemli ve klimayla ısınan daireler doğalgaz faturasından analiz edilemez. Eski binalarda insanlar evi zaten az ısıttığı için gerçek tüketim hesaplanandan düşük olur ve yalıtım sonrası gerçek tasarruf da beklenenden küçük çıkar (prebound etkisi; Sunikka-Blank ve Galvin, 2012); simülasyondaki değişim sonuçları bu yüzden bir üst sınırdır. Kesin doğrulama ancak gerçek İzmir verisiyle bir pilotta yapılabilir.</p>
+<h3>Gizlilik</h3>
+<p>Ham veri kurumlardan çıkmaz, eşleştirme şifrelenmiş adres koduyla yapılır. Yönetim tüm binaları görür; vatandaş yalnızca kendi dairesini, binanın tamamı kendisine aitse binasını görür.</p>
+<h3>Kaynaklar</h3>
+<p class="muted small">Veri setleri</p><ul class="srcl"><li>NEED 2025 anonimleştirilmiş veri seti, İngiltere Enerji Güvenliği ve Net Sıfır Bakanlığı (Open Government Licence) <a href="https://www.gov.uk/government/statistics/national-energy-efficiency-data-framework-need-anonymised-data-2025" target="_blank" rel="noopener">www.gov.uk</a></li><li>IDEAL Household Energy Dataset, Edinburgh Üniversitesi (CC BY 4.0); Pullinger ve ark. (2021), Scientific Data 8, 146 <a href="https://datashare.ed.ac.uk/handle/10283/3647" target="_blank" rel="noopener">datashare.ed.ac.uk</a></li><li>İzmir Büyükşehir Belediyesi Açık Veri Portalı: Bina Kimlik Belgesi (Bornova yapı envanteri), Mahalle Bazlı Bina Sayıları (CC BY 4.0) <a href="https://acikveri.bizizmir.com" target="_blank" rel="noopener">acikveri.bizizmir.com</a></li><li>OpenStreetMap katkıcıları, bina ve sokak verisi (ODbL) <a href="https://www.openstreetmap.org" target="_blank" rel="noopener">www.openstreetmap.org</a></li><li>Open-Meteo Historical Weather API, günlük sıcaklık ve güneş radyasyonu (CC BY 4.0) <a href="https://open-meteo.com" target="_blank" rel="noopener">open-meteo.com</a></li></ul>
+<p class="muted small">İstatistikler ve raporlar</p><ul class="srcl"><li>TÜİK, Bina ve Konut Nitelikleri Araştırması 2021</li><li>TÜİK, Hanehalkı Nihai Enerji Tüketim İstatistikleri 2022</li><li>TÜİK İzmir Bölge Müdürlüğü, İzmir hane büyüklüğü ve istihdam göstergeleri 2024 (haber kaynağı üzerinden)</li><li>TÜİK, İstatistiklerle Aile 2024 (haber kaynağı üzerinden)</li><li>SHURA Enerji Dönüşümü Merkezi, Türkiye Enerji Dönüşümü Görünümü 2025</li><li>İzmir hane başı doğalgaz tüketimi 2023 (TAYED açıklaması, CNN Türk)</li><li>Türkiye konut doğalgaz tüketimi 2024 (GAZBİR, Ekonomi Gazetesi)</li></ul>
+<p class="muted small">Literatür</p><ul class="srcl"><li>Casey, S., Krarti, M., Bianchi, M., Roberts, D. (2010). Identifying Inefficient Single-Family Homes With Utility Bill Analysis. NREL/CP-550-47994, ASME ES2010.</li><li>Sunikka-Blank, M., Galvin, R. (2012). Introducing the prebound effect: the gap between performance and actual energy consumption. Building Research &amp; Information 40(3). <a href="https://www.cam.ac.uk/research/news/the-prebound-effect" target="_blank" rel="noopener">www.cam.ac.uk</a></li><li>A study on determining the optimal energy retrofit strategies for an existing residential building in Turkey (Türkiye'de hesaplanmış yalıtım tasarrufu). <a href="https://www.researchgate.net/publication/286114192" target="_blank" rel="noopener">www.researchgate.net</a></li></ul>
+<p style="margin-top:24px"><a class="btn main" href="#harita">Haritaya git</a></p></div></div>
+<div class="page" id="p-vizyon"><div class="howp" style="max-width:900px">
+<h2>Sonraki adımlar: prototipte henüz olmayanlar</h2>
+<p class="muted">Bu prototip tek bir mahallede, kalibre edilmiş sentetik faturalarla çalışıyor. Aşağıdakiler, gerçek bir belediye projesinde eklenmesi planlanan ama bugün elimizdeki veriyle kurulamayan parçalar. Her birinde hangi verinin gerektiğini ve prototipte ne öğrendiğimizi yazdık.</p>
+<div class="vgrid">
+<div class="card vcard"><span class="tag">Ölçek</span><h3 style="margin-top:8px">İlçe, il ve ülke ölçeği</h3><p>Sistem İzmir'in tamamında, sonra diğer illerde çalışır. Yıllarca biriken fatura geçmişi değişim tespitindeki gürültüyü azaltır; belediyenin destek kayıtlarıyla birleşince yalıtımın İzmir'de gerçekte ne kadar tasarruf sağladığı ölçülür ve eşikler şehir genelinde ayarlanır.</p><p class="small"><strong>Gereken veri:</strong> Çok yıllık fatura geçmişi (İzmirgaz, Gediz), il geneli yapı envanteri, destek programı kayıtları.</p><p class="small muted"><strong>Prototipten öğrendiğimiz:</strong> Daha fazla bina tek başına yetmez: kayıtlardan skor tahmini 2.895 binayla da, NEED'in 36.844 eviyle de zayıf kaldı. İyileşmeyi sağlayacak olan daha uzun geçmiş ve yeni veri türleri.</p></div>
+<div class="card vcard"><span class="tag">Harita</span><h3 style="margin-top:8px">Güncel ve doğrulanmış harita</h3><p>Belediyenin düzenli hava fotoğrafları ve drone çekimleri harita ve kayıtlarla otomatik karşılaştırılır. Bina sınırları görüntüden yapay zekâyla çıkarılır; yeni yapılan, yıkılan ve kayıtta olmayan binalar işaretlenir. Belli sayıda bina sahada kontrol edilerek haritanın doğruluğu ölçülür. Maliyeti düşük tutmak için iki katmanlı çalışır: sık güncellenen ücretsiz uydu görüntüleri (ör. Sentinel-2) tek tek binaları çizemese de nerede yeni inşaat ya da yıkım olduğunu yakalar; drone veya hava fotoğrafı yalnızca bu değişen bölgelere gönderilir.</p><p class="small"><strong>Gereken veri:</strong> Düzenli ortofoto veya drone görüntüsü, koordinatlı adres kayıtları (UAVT).</p><p class="small muted"><strong>Prototipten öğrendiğimiz:</strong> Açık haritada Yeşilova'nın yaklaşık %95'i var, ama envanter kayıtlarında koordinat olmadığı için binaların %28'i doğru adrese eşlenemedi. Koordinatlı kayıt bu sorunu ortadan kaldırır.</p></div>
+<div class="card vcard"><span class="tag">Kayıt dışı</span><h3 style="margin-top:8px">Kayıtsız binalar ve verisi olmayan haneler</h3><p>Haritada olup kayıtta olmayan binalar kayıt dışı yapı adayı olur. Kat sayısı yükseklikten, yapım dönemi eski hava fotoğraflarından (bina hangi yıl fotoğrafta belirmiş) tahmin edilir. Doğalgaz kullanmayan binalarda elektrik verisi devreye girer. Böylece sistem kendi eksiklerini kapatır.</p><p class="small"><strong>Gereken veri:</strong> 3B şehir modeli veya LiDAR, tarihi hava fotoğrafları, elektrik faturaları.</p><p class="small muted"><strong>Prototipten öğrendiğimiz:</strong> Yalnızca kayıtlardaki bilgilerle tahmin yetmiyor (faturası olmayan binalarda 24 puan hata, tahminsiz kalmakla neredeyse aynı). Eksikleri kapatmak için görüntü gibi yeni bir kaynak şart.</p></div>
+<div class="card vcard"><span class="tag">Termal</span><h3 style="margin-top:8px">Kışın tek gece termal tarama</h3><p>Binalardan kaçan ısı, içerisi ile dışarısı arasındaki fark büyükken, kışın gece veya sabaha karşı en net görünür. Bu yüzden sürekli çekim gerekmez: mahalle başına kışta bir gece uçuşu, cepheler için araç üstü termal kamera yeterli. Sonuç, modelin işaretlediği binalarla karşılaştırılarak sistemi sahada doğrular.</p><p class="small"><strong>Gereken veri:</strong> Termal kameralı drone veya araç, uçuş izni, kış gecesi.</p><p class="small muted"><strong>Prototipten öğrendiğimiz:</strong> Sistemin "nereye bakılmalı" dediği binaları "neden" sorusuyla birleştirir: sorun çatıda mı, cephede mi, pencerede mi.</p></div>
+<div class="card vcard"><span class="tag">Görüntü</span><h3 style="margin-top:8px">Cephe fotoğrafından mantolama tespiti</h3><p>Mantolama hiçbir kayıtta yok ama binanın fotoğrafında görünüyor. Sokak fotoğraflarından mantolama, pencere tipi ve kapatılmış balkonları tanıyan bir görüntü modeli, enerji tüketimini belirleyen en önemli eksik bilgiyi tamamlar. Çatıdaki güneş enerjili su ısıtıcıları da uydu görüntüsünden bulunur.</p><p class="small"><strong>Gereken veri:</strong> Sokak düzeyi fotoğraflar, uydu görüntüsü, etiketli örnekler.</p><p class="small muted"><strong>Prototipten öğrendiğimiz:</strong> Simülasyonda en büyük belirsizlik kaynağı, kayıtlarda görünmeyen mantolamaydı.</p></div>
+<div class="card vcard"><span class="tag">Sayaç</span><h3 style="margin-top:8px">Saatlik akıllı sayaç</h3><p>Saatlik elektrik verisi, evde ne zaman biri olduğunu ve ısıtmanın hangi saatlerde çalıştığını gösterir. Bu, binadan kaynaklanan kaybı hanenin alışkanlığından ayırmanın en güçlü yolu. Ham veri dağıtım şirketinden çıkmaz, yalnızca özetlenmiş bilgiler kullanılır.</p><p class="small"><strong>Gereken veri:</strong> Akıllı sayaç verisi (Türkiye'de kurulumu sürüyor).</p><p class="small muted"><strong>Prototipten öğrendiğimiz:</strong> Gerçek evlerde (IDEAL) aylık faturadan tek bir hanenin termostat alışkanlığı okunamadı; saatlik veri bu boşluğu doldurur.</p></div>
+<div class="card vcard"><span class="tag">Belediye</span><h3 style="margin-top:8px">Destek doğrulama modu</h3><p>Belediye yalıtım desteği verdiği binaların listesini girer; sistem her biri için "tasarruf doğrulandı", "belirsiz" veya "tasarruf yok" der. Tasarruf görünmeyen binalar kötü uygulanmış işlerin adayıdır.</p><p class="small"><strong>Gereken veri:</strong> Destek programı kayıtları, en az iki kışlık fatura.</p><p class="small muted"><strong>Prototipten öğrendiğimiz:</strong> Hangi binaya bakılacağı bilindiğinde iş çok kolaylaşıyor: simülasyonda mantolanan binaların %82'sinde %10'dan fazla düşüş görüldü (üst sınır; gerçek tasarruf daha düşük olabilir).</p></div>
+<div class="card vcard"><span class="tag">Yapay zekâ</span><h3 style="margin-top:8px">Saha ekibi için açıklama</h3><p>Bir dil modeli, seçilen bina için saha ekibine kısa bir ön inceleme notu yazar: binanın yaşı, skoru, dairelerin benzer mi farklı mı tükettiği ve önce neyin kontrol edilmesi gerektiği. Hane modülünde (Task 3) Gemini bu işi tek ev için yapıyor.</p><p class="small"><strong>Gereken veri:</strong> Mevcut sistem çıktıları; Gemini gibi bir dil modeli.</p></div>
+<div class="card vcard"><span class="tag">Gizlilik</span><h3 style="margin-top:8px">Kurumlar arası güvenli eşleştirme</h3><p>Ham veri kurumlardan çıkmaz; her kurum adres kodunu kendi tarafında şifreler ve sadece gerekli alanları gönderir. Yönetim bina düzeyinde, vatandaş yalnızca kendi dairesini görür; kamuya açık haritada sonuçlar toplulaştırılır.</p><p class="small"><strong>Gereken veri:</strong> Kurumlar arası protokoller, KVKK uyumlu altyapı.</p></div>
+</div>
+<p style="margin-top:24px"><a class="btn main" href="#harita">Haritaya dön</a></p></div></div>
+<script src="https://cdn.jsdelivr.net/npm/deck.gl@8.9.31/dist.min.js"></script>
+<div id="ltLoad" style="position:fixed;inset:0;z-index:50;display:flex;align-items:center;justify-content:center;background:var(--bg);color:var(--ink);font-size:16px">Veriler yükleniyor…</div>
+<script type="text/plain" id="ltMain">// LeakTrace canli analiz cekirdegi: ham aylik faturalar + gunluk sicaklik -> bina skorlari
+function analyzeLT(D){
+  const t0=(typeof performance!=='undefined'?performance.now():Date.now());
+  const mean=a=>a.reduce((s,x)=>s+x,0)/a.length;
+  const median=a=>{const s=[...a].sort((x,y)=>x-y),m=s.length>>1;return s.length%2?s[m]:(s[m-1]+s[m])/2;};
+  const M=D.months.length, nd=D.dt.map(a=>a.length);
+  const TB=[];for(let t=10;t<=20.0001;t+=0.5)TB.push(Math.round(t*10)/10);
+  const HDD=TB.map(tb=>D.dt.map(a=>a.reduce((s,x)=>s+Math.max(tb-x,0),0)/a.length));
+  const allT=D.dt.flat(), HN=TB.map(tb=>allT.reduce((s,x)=>s+Math.max(tb-x,0),0)/3);
+  const S1=[],S2=[],WIN=[],SUM=[],SHO=[];
+  D.months.forEach((m,i)=>{if(m>='2022-07'&&m<='2023-06')S1.push(i);if(m>='2023-07'&&m<='2024-06')S2.push(i);
+    const k=+m.slice(5,7);if([12,1,2].includes(k))WIN.push(i);else if([6,7,8,9].includes(k))SUM.push(i);else if([4,5,10,11].includes(k))SHO.push(i);});
+  function prism(g,idx){
+    const y=idx.map(i=>g[i]/nd[i]),ym=mean(y);let best=null;
+    for(let k=0;k<TB.length;k++){
+      const x=idx.map(i=>HDD[k][i]),xm=mean(x);let sxx=0,sxy=0;
+      for(let j=0;j<x.length;j++){sxx+=(x[j]-xm)**2;sxy+=(x[j]-xm)*(y[j]-ym);}
+      if(sxx<1e-9)continue;const b=sxy/sxx,a=ym-b*xm;let ss=0,st=0;
+      for(let j=0;j<x.length;j++){ss+=(y[j]-a-b*x[j])**2;st+=(y[j]-ym)**2;}
+      const r2=st>0?1-ss/st:0;
+      if(b>0&&(!best||r2>best.r2))best={tb:TB[k],k,a,b,r2};
+    }
+    if(best)best.nac=best.b*HN[best.k];
+    return best;
+  }
+  const f=D.f,n=f.bi.length,nb=D.b.length;
+  const cls=new Array(n),fit1=new Array(n),fit2=new Array(n),res=new Array(n).fill(null),rel=new Array(n).fill(null),dl=new Array(n).fill(null);
+  for(let i=0;i<n;i++){
+    const g=f.g[i],e=f.e[i];
+    if(f.per[i]===0){cls[i]='bos';continue;}
+    if(!g){cls[i]='gazsiz';continue;}
+    const gw=mean(WIN.map(j=>g[j]/nd[j])),gs=mean(SUM.map(j=>g[j]/nd[j])),ew=mean(WIN.map(j=>e[j]/nd[j])),eh=mean(SHO.map(j=>e[j]/nd[j]));
+    if(gw/Math.max(gs,0.1)>=1.3)cls[i]='kombi';else if(ew/Math.max(eh,0.1)>=1.25)cls[i]='klima';else cls[i]='belirsiz';
+    if(cls[i]!=='kombi')continue;
+    fit1[i]=prism(g,S1);fit2[i]=prism(g,S2);
+  }
+  // konum duzeltmesi: log(NAC/m2) ~ 1 + en ust + zemin + dukkan ustu + dis cephe + log(alan)
+  const rows=[];for(let i=0;i<n;i++)if(fit1[i]&&fit1[i].nac>0)rows.push(i);
+  const X=i=>[1,f.top[i],f.gr[i],f.sh[i],f.ext[i],Math.log(f.ar[i])],P=6;
+  const A=Array.from({length:P},()=>new Array(P).fill(0)),bv=new Array(P).fill(0);
+  rows.forEach(i=>{const x=X(i),y=Math.log(fit1[i].nac/f.ar[i]);for(let r=0;r<P;r++){bv[r]+=x[r]*y;for(let c=0;c<P;c++)A[r][c]+=x[r]*x[c];}});
+  for(let c=0;c<P;c++){let p=c;for(let r=c+1;r<P;r++)if(Math.abs(A[r][c])>Math.abs(A[p][c]))p=r;[A[c],A[p]]=[A[p],A[c]];[bv[c],bv[p]]=[bv[p],bv[c]];
+    for(let r=0;r<P;r++){if(r===c)continue;const k=A[r][c]/A[c][c];for(let q=c;q<P;q++)A[r][q]-=k*A[c][q];bv[r]-=k*bv[c];}}
+  const beta=bv.map((v,i)=>v/A[i][i]);
+  rows.forEach(i=>{const x=X(i);res[i]=Math.log(fit1[i].nac/f.ar[i])-x.reduce((s,v,k)=>s+v*beta[k],0);
+    if(fit2[i]&&fit2[i].nac>0)dl[i]=Math.log(fit2[i].nac/fit1[i].nac);});
+  // bina duzeyi
+  const flatsOf=Array.from({length:nb},()=>[]);for(let i=0;i<n;i++)flatsOf[f.bi[i]].push(i);
+  const bs=new Array(nb).fill(null);
+  for(let b=0;b<nb;b++){const r=flatsOf[b].filter(i=>res[i]!==null).map(i=>res[i]);if(r.length)bs[b]=median(r);}
+  const pct=(vals)=>{const idx=vals.map((v,i)=>[v,i]).filter(x=>x[0]!==null).sort((a,b)=>a[0]-b[0]),out=new Array(vals.length).fill(null),N=idx.length;
+    let i=0;while(i<N){let j=i;while(j+1<N&&idx[j+1][0]===idx[i][0])j++;const r=((i+1)+(j+1))/2;for(let k=i;k<=j;k++)out[idx[k][1]]=r/N*100;i=j+1;}return out;};
+  const bpct=pct(bs);
+  for(let i=0;i<n;i++)if(res[i]!==null)rel[i]=res[i]-bs[f.bi[i]];
+  const relp=pct(rel);
+  const out=D.b.map((B,b)=>{
+    const fl=flatsOf[b],an=fl.filter(i=>res[i]!==null),nm=an.filter(i=>f.mv[i]<0&&dl[i]!==null);
+    let lvl=an.length>=6?2:an.length>=3?1:0;if(!B.yrr)lvl=Math.max(lvl-1,0);
+    const ch=nm.length?Math.round((Math.exp(median(nm.map(i=>dl[i])))-1)*100):null;
+    const heat={};fl.forEach(i=>heat[cls[i]]=(heat[cls[i]]||0)+1);
+    return {s:bs[b]===null?null:Math.round(bpct[b]),conf:an.length?['Düşük','Orta','Yüksek'][lvl]:null,nb:an.length,ch,chn:nm.length,flag:ch!==null&&nm.length>=2&&ch<=-20?1:0,heat,fl};
+  });
+  // dogrulama (simulasyonun gercek cevabina karsi)
+  const thName=['kombi','klima','gazsiz','gazsiz'];let ok=0,tot=0;const conf={};
+  for(let i=0;i<n;i++){if(f.per[i]===0)continue;tot++;const t=thName[f.th[i]],p=cls[i];if(t===p)ok++;const k=t+'>'+p;conf[k]=(conf[k]||0)+1;}
+  const cand=D.b.map((B,b)=>[B,out[b]]).filter(([B,o])=>B.era==='pre2000'&&!B.t_mant&&o.chn>=1);
+  const auc=(()=>{const pos=cand.filter(c=>c[0].t_ret).map(c=>-c[1].ch),neg=cand.filter(c=>!c[0].t_ret).map(c=>-c[1].ch);let s=0;pos.forEach(p=>neg.forEach(q=>{s+=p>q?1:p===q?0.5:0;}));return s/(pos.length*neg.length);})();
+  const flags=out.filter(o=>o.flag).length,flagTrue=D.b.filter((B,b)=>out[b].flag&&B.t_ret).length;
+  const t1=(typeof performance!=='undefined'?performance.now():Date.now());
+  return {out,cls,fit1,fit2,rel:relp,dl,flatsOf,beta,HDD,nd,S1,S2,stats:{flats:n,analyzed:rows.length,clsAcc:ok/tot,conf,auc,flags,flagTrue,retTotal:D.b.filter(B=>B.t_ret).length,ms:Math.round(t1-t0),buildings:out.filter(o=>o.s!==null).length}};
+}
+
+
+const RAW=window.__LT_DATA;
+const D={s:RAW.s.map(p=>({p})),stats:{}};
+let B=[],AN=null;const NR=RAW.nr.map(p=>({poly:p}));
+const POS=i=>{const f=RAW.f;return (f.top[i]?'en üst kat':f.gr[i]?'zemin kat':'ara kat')+(f.end[i]&&f.fpf[i]>1?', köşe':'')+(f.sh[i]?', dükkân üstü':'');};
+function runAnalysis(){
+  AN=analyzeLT(RAW);const f=RAW.f;
+  B=RAW.b.map((b,k)=>{const o=AN.out[k];return {...b,res:1,s:o.s==null?null:100-o.s,conf:o.conf,nb:o.nb,ch:o.ch,chn:o.chn,flag:o.flag,heat:o.heat,nf:o.fl.length,
+    flats:o.fl.map(i=>({i,fl:f.fl[i],pos:POS(i),area:Math.round(f.ar[i]),st:AN.cls[i]==='kombi'&&AN.rel[i]!=null?'analiz':AN.cls[i],rel:AN.rel[i]==null?null:Math.round(AN.rel[i]),
+      mv:(f.mv[i]>=0&&AN.dl[i]!=null&&AN.fit1[i].nac>=800&&AN.fit2[i].nac>=800)?Math.round((Math.exp(AN.dl[i])-1)*100):null}))};});
+  const S=AN.stats;D.stats={nb:B.length,nf:S.flats,analiz:S.analyzed,flag:S.flags,flag_true:S.flagTrue,ret:S.retTotal,ms:S.ms,acc:S.clsAcc,auc:S.auc};
+  matches=B;applyThresh();
+}
+const BBOX=[[27.19619,38.42763],[27.21204,38.44453]];
+const HOME={longitude:27.20412,latitude:38.43608,zoom:15.4,pitch:45,bearing:-18,minZoom:14.6,maxZoom:19};
+const clampV=v=>({...v,longitude:Math.max(BBOX[0][0]-0.003,Math.min(BBOX[1][0]+0.003,v.longitude)),latitude:Math.max(BBOX[0][1]-0.003,Math.min(BBOX[1][1]+0.003,v.latitude)),zoom:Math.max(14.6,Math.min(19,v.zoom))});
+function homeView(){const m=$('map');let v={longitude:HOME.longitude,latitude:HOME.latitude,zoom:HOME.zoom};try{const w=m.clientWidth,h=m.clientHeight;if(w>50&&h>50){const pad=Math.min(60,w/8);const f=new deck.WebMercatorViewport({width:w,height:h}).fitBounds(BBOX,{padding:pad});v={longitude:f.longitude,latitude:f.latitude,zoom:f.zoom+(st.d3?0.25:0)};}}catch(e){}return {...v,pitch:st.d3?45:0,bearing:st.d3?-18:0};}
+const st={th:20,minN:2,fsel:null,openF:false,openL:false,role:'yon',layer:'skor',d3:true,sim:false,sel:null,flat:null,rot:false,q:'',f:{smin:0,smax:100,era:{a:true,b:true,c:true},minfl:1,conf:{Yüksek:true,Orta:true,Düşük:true},soba:false,klima:false,flag:false,dusuk:false},vq:'',vsel:null};
+let vs={...HOME};
+const $=id=>document.getElementById(id);
+const fmt=n=>Number(n).toLocaleString('tr-TR');
+const norm=s=>(s||'').toLocaleLowerCase('tr-TR').replace(/\s+/g,' ').trim();
+const adr=b=>`${b.sok||'İsimsiz sokak'}${b.no?' No: '+b.no:''}`;
+const STOPS=[[46,47,134],[106,47,140],[180,53,126],[238,126,63],[255,217,122]];
+const GSTOPS=[[214,69,69],[233,180,76],[58,157,93]];
+function ryg(t){t=Math.max(0,Math.min(1,t))*2;const i=Math.min(1,Math.floor(t)),f=t-i,a=GSTOPS[i],b=GSTOPS[i+1];return a.map((v,k)=>Math.round(v+(b[k]-v)*f));}
+function thermal(t){t=Math.max(0,Math.min(1,t))*4;const i=Math.min(3,Math.floor(t)),f=t-i,a=STOPS[i],b=STOPS[i+1];return a.map((v,k)=>Math.round(v+(b[k]-v)*f));}
+const GREY=[70,74,110],DIM=[45,48,84],NEUTRAL=[82,86,128];
+const era=b=>b.yr<2000?'a':b.yr<2009?'b':'c';
+function filterActive(){const f=st.f;return st.q||f.smin>0||f.smax<100||!f.era.a||!f.era.b||!f.era.c||f.minfl>1||!f.conf.Yüksek||!f.conf.Orta||!f.conf.Düşük||f.soba||f.klima||f.flag||f.dusuk;}
+function match(b){
+  const f=st.f;
+  if(st.q){const q=norm(st.q);if(!norm(adr(b)).includes(q))return false;}
+  if(f.smin>0||f.smax<100){if(b.s==null||b.s<f.smin||b.s>f.smax)return false;}
+  if(!f.era[era(b)])return false;
+  if(b.fl<f.minfl)return false;
+  if(b.conf&&!f.conf[b.conf])return false;
+  if(f.soba&&!b.heat.gazsiz)return false;
+  if(f.dusuk&&!b.heat.belirsiz)return false;
+  if(f.klima&&!b.heat.klima)return false;
+  if(f.flag&&!b.flag)return false;
+  return true;
+}
+let matches=[];
+function color(b){
+  if(st.role==='vat')return NEUTRAL;
+  if(filterActive()&&!match(b))return DIM;
+  if(st.sim){if(b.flag&&b.t_ret)return [58,157,93];if(b.flag)return [233,180,76];if(b.t_ret)return [214,69,69];return [70,74,110];}
+  if(st.layer==='deg'){if(b.ch==null)return DIM;return b.flag?[47,111,219]:[92,96,134];}
+  return b.s==null?GREY:ryg(b.s/100);
+}
+let deckgl=null,colorKey=0;
+function layers(){
+  const sel=st.role==='vat'?st.vsel:st.sel;
+  const L=[new deck.PathLayer({id:'streets',data:D.s,getPath:d=>d.p,getColor:[58,62,118],widthUnits:'meters',getWidth:5,widthMinPixels:1})];
+  L.push(new deck.PolygonLayer({id:'other',data:NR,getPolygon:d=>d.poly,extruded:st.d3,getElevation:6,getFillColor:[40,43,80],stroked:false}));
+  L.push(new deck.PolygonLayer({id:'bld',data:B,pickable:st.role==='yon',autoHighlight:st.role==='yon',highlightColor:[255,255,255,90],
+    getPolygon:d=>d.poly,extruded:st.d3,getElevation:d=>d.h*1.3,getFillColor:d=>color(d),stroked:!st.d3,getLineColor:[16,19,58],lineWidthMinPixels:0.5,
+    material:{ambient:0.55,diffuse:0.55,shininess:20},updateTriggers:{getFillColor:[colorKey]}}));
+  if(sel)L.push(new deck.PolygonLayer({id:'sel',data:[sel],getPolygon:d=>d.poly,extruded:st.d3,getElevation:d=>d.h*1.3+1,getFillColor:st.role==='vat'?[255,217,122,230]:[255,255,255,60],stroked:true,wireframe:true,getLineColor:[255,255,255],lineWidthMinPixels:3}));
+  return L;
+}
+function redraw(){colorKey++;if(deckgl)deckgl.setProps({layers:layers()});}
+function setView(v){vs=clampV({...vs,...v,transitionDuration:0});if(deckgl)deckgl.setProps({viewState:vs});}
+function flyTo(b){setView({longitude:b.c[0],latitude:b.c[1],zoom:17.4});}
+function initMap(){
+  if(!window.deck){$('err').style.display='flex';return;}
+  vs={...vs,...homeView()};
+  try{
+    deckgl=new deck.Deck({parent:$('map'),viewState:vs,controller:{dragMode:'pan'},style:{position:'absolute',inset:'0',zIndex:'1'},
+      onViewStateChange:({viewState})=>{vs=clampV({...viewState,minZoom:14.6,maxZoom:19});deckgl.setProps({viewState:vs});},layers:layers(),
+      getTooltip:({object:o})=>o&&o.res&&st.role==='yon'?{text:`${adr(o)}\nVerimlilik: ${o.s??'analiz yok'} · ${o.yr} · ${o.fl} kat`}:null,
+      onClick:({object:o})=>{if(o&&o.res&&st.role==='yon'){st.sel=o;render();redraw();}}});
+  }catch(e){$('err').style.display='flex';}
+  // orta tus ile dondurme
+  const m=$('map');let drag=null;
+  m.addEventListener('mousedown',e=>{if(e.button===1&&e.target.tagName==='CANVAS'){e.preventDefault();drag=[e.clientX,e.clientY];}},true);
+  window.addEventListener('mousemove',e=>{if(!drag)return;const dx=e.clientX-drag[0],dy=e.clientY-drag[1];drag=[e.clientX,e.clientY];
+    setView({bearing:vs.bearing+dx*0.35,pitch:st.d3?Math.max(0,Math.min(70,vs.pitch-dy*0.25)):0,transitionDuration:0});});
+  window.addEventListener('mouseup',()=>{drag=null;});
+  m.addEventListener('auxclick',e=>{if(e.button===1)e.preventDefault();});
+}
+$('rotBtn').onclick=()=>{st.rot=!st.rot;$('rotBtn').setAttribute('aria-pressed',st.rot);$('rotHint').hidden=!st.rot;if(deckgl)deckgl.setProps({controller:{dragMode:st.rot?'rotate':'pan'}});};
+$('resetBtn').onclick=()=>setView(homeView());
+function legend(){
+  let h;
+  if(st.role==='vat')h=`<strong>Vatandaş görünümü</strong><div style="margin-top:6px">Yalnızca kendi binanız vurgulanır. Diğer binaların sonuçları gizlidir.</div>`;
+  else if(st.layer==='deg')h=`<strong>Son kış değişimi</strong><div class="small" style="opacity:.8">2022/23 → 2023/24 kışı, taşınmayan daireler</div><div style="margin-top:8px"><span class="sw" style="background:rgb(47,111,219)"></span>Olası iyileştirme: iki kışta da aynı hanenin oturduğu en az ${st.minN} dairede ısınma tüketimi %${st.th}'den fazla düştü</div><div><span class="sw" style="background:rgb(92,96,134)"></span>Belirgin değişim yok</div><div><span class="sw" style="background:rgb(${DIM})"></span>Veri yok ya da filtre dışı</div>`;
+  else h=`<strong>Bina Verimlilik Skoru</strong><b class="rev"></b><div class="row"><span>0 · çok ısı kaybı</span><span>100 · verimli</span></div><div style="margin-top:6px"><span class="sw" style="background:rgb(${GREY})"></span>Analiz yok (doğalgaz faturası yok, klima, boş)</div>${filterActive()?`<div><span class="sw" style="background:rgb(${DIM})"></span>Filtre dışı</div>`:''}`;
+  if(st.sim)h=`<strong>Simülasyon doğrulaması</strong><div style="margin-top:8px"><span class="sw" style="background:rgb(58,157,93)"></span>Doğru tespit: model buldu, gerçekten mantolanmış</div><div><span class="sw" style="background:rgb(233,180,76)"></span>Yanlış alarm: model buldu, mantolanmamış</div><div><span class="sw" style="background:rgb(214,69,69)"></span>Kaçırılan: mantolanmış, model bulamadı</div><div><span class="sw" style="background:rgb(70,74,110)"></span>Mantolanmamış, model de işaretlemedi</div>`;
+  $('legend').innerHTML=h;
+}
+// ---- SOL PANEL
+function leftYon(){
+  const f=st.f;
+  return `<h2>Bina ara ve filtrele</h2><p class="muted small">Yönetim tüm binaları görür ve filtreleyebilir.</p>
+  <div class="srow"><input class="search" id="q" placeholder="Sokak ya da kapı no, ör. 4037" value="${st.q.replace(/"/g,'&quot;')}" aria-label="Bina ara"><button class="fbtn${filterActive()?' on':''}" id="fbtn" aria-expanded="${st.openF}" aria-controls="fbox" title="Filtreler" aria-label="Filtreler"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 5h18l-7 8v6l-4-2v-4z"/></svg></button></div>
+  <div id="fbox" class="dz" ${st.openF?'':'hidden'}>
+  <fieldset><legend>Verimlilik Skoru</legend><div class="rng"><input type="number" id="smin" min="0" max="100" value="${f.smin}" aria-label="En düşük skor"> – <input type="number" id="smax" min="0" max="100" value="${f.smax}" aria-label="En yüksek skor"></div></fieldset>
+  <fieldset><legend>Yapım dönemi</legend><div class="opts">
+    <label><input type="checkbox" data-era="a" ${f.era.a?'checked':''}> 2000 öncesi</label><label><input type="checkbox" data-era="b" ${f.era.b?'checked':''}> 2000–2008</label><label><input type="checkbox" data-era="c" ${f.era.c?'checked':''}> 2009 sonrası</label></div></fieldset>
+  <fieldset><legend>En az kat</legend><div class="rng"><input type="number" id="minfl" min="1" max="40" value="${f.minfl}" aria-label="En az kat sayısı"></div></fieldset>
+  <fieldset><legend>Veri yeterliliği</legend><div class="opts">${['Yüksek','Orta','Düşük'].map(c=>`<label><input type="checkbox" data-conf="${c}" ${f.conf[c]?'checked':''}> ${confTxt[c]}</label>`).join('')}</div></fieldset>
+  <fieldset><legend>Diğer</legend><div class="opts" style="flex-direction:column">
+    <label><input type="checkbox" id="fflag" ${f.flag?'checked':''}> Yalnızca son kışta tüketimi belirgin düşen binalar <span class="muted" style="font-size:12px">(olası iyileştirme: mantolama, pencere ya da kombi yenilemesi)</span></label>
+    <label><input type="checkbox" id="fsoba" ${f.soba?'checked':''}> Doğalgaz faturası olmayan daire içeren</label>
+    <label><input type="checkbox" id="fklima" ${f.klima?'checked':''}> Klimayla ısınan daire içeren</label>
+    <label><input type="checkbox" id="fdusuk" ${f.dusuk?'checked':''}> Çok düşük ısınan daire içeren</label></div></fieldset>
+  <p style="margin-top:12px"><button class="back" id="clr" style="margin:0">Filtreleri temizle</button></p></div>
+  <p style="margin:12px 0 0"><strong id="cnt"></strong></p>
+  <details class="dz" ${st.openL?'open':''} id="dL"><summary>Öncelik listesi</summary><p class="muted small">Önce verisi yeterli binalar, sonra en düşük Verimlilik Skorundan başlayarak (ilk 100).</p><div class="list" id="res" style="margin-top:6px"></div></details>`;
+}
+function leftVat(){
+  return `<h2>Adresinizi bulun</h2><p class="muted small">Gerçek sistemde e-Devlet ile giriş yaparsınız ve yalnızca adres kaydınızın bulunduğu daireyi görürsünüz. Demo için bir adres arayın.</p>
+  <input class="search" id="vq" placeholder="Sokak ve kapı no, ör. 4037 sokak 3" value="${st.vq.replace(/"/g,'&quot;')}" aria-label="Adres ara">
+  <div class="list scrollbox" id="vres" style="margin-top:10px"></div>
+  <div class="note">Tüm daireleri tek bir kişiye ya da şirkete ait binalarda bina görünümü de açılır. Bina yöneticileri bina verisini bu sistemden değil, belediyeye ayrı bir başvuruyla ve yükümlülükler altında talep edebilir.</div>`;
+}
+function chipStyle(s){if(s==null)return 'background:#8C90B5';const c=ryg(s/100);return `background:rgb(${c})`;}
+function refreshResults(){
+  matches=B.filter(match);
+  if($('cnt'))$('cnt').textContent=`${fmt(matches.length)} bina eşleşiyor`;
+  if($('fbtn'))$('fbtn').classList.toggle('on',!!filterActive());
+  if($('res')){const cw={Yüksek:2,Orta:1,Düşük:0};const top=[...matches].sort((a,b)=>((cw[b.conf]??-1)-(cw[a.conf]??-1))||((a.s??999)-(b.s??999))).slice(0,100);
+    $('res').innerHTML=top.map(b=>`<button class="item" data-id="${b.id}"><span>${adr(b)}<br><span class="muted small">${b.yr} · ${b.fl} kat · ${b.nf} daire${b.flag?' · iyileştirme?':''}</span></span><span class="chip" style="${chipStyle(b.s)}">${b.s??'–'}</span></button>`).join('')||'<p class="muted">Eşleşen bina yok.</p>';
+    $('res').querySelectorAll('.item').forEach(x=>x.onclick=()=>{const b=B.find(o=>o.id===x.dataset.id);st.sel=b;flyTo(b);render();redraw();});}
+  legend();redraw();
+}
+function bindLeftYon(){
+  const f=st.f,upd=()=>refreshResults();
+  $('q').oninput=e=>{st.q=e.target.value;upd();};
+  $('smin').oninput=e=>{f.smin=+e.target.value||0;upd();};$('smax').oninput=e=>{f.smax=e.target.value===''?100:+e.target.value;upd();};
+  $('minfl').oninput=e=>{f.minfl=+e.target.value||1;upd();};
+  document.querySelectorAll('[data-era]').forEach(x=>x.onchange=()=>{f.era[x.dataset.era]=x.checked;upd();});
+  document.querySelectorAll('[data-conf]').forEach(x=>x.onchange=()=>{f.conf[x.dataset.conf]=x.checked;upd();});
+  $('fflag').onchange=e=>{f.flag=e.target.checked;upd();};$('fsoba').onchange=e=>{f.soba=e.target.checked;upd();};$('fklima').onchange=e=>{f.klima=e.target.checked;upd();};
+  $('clr').onclick=()=>{st.q='';st.f={smin:0,smax:100,era:{a:true,b:true,c:true},minfl:1,conf:{Yüksek:true,Orta:true,Düşük:true},soba:false,klima:false,flag:false,dusuk:false};renderLeft();};
+  $('fbtn').onclick=()=>{st.openF=!st.openF;$('fbox').hidden=!st.openF;$('fbtn').setAttribute('aria-expanded',st.openF);};$('dL').ontoggle=e=>{st.openL=e.target.open;};
+  $('fdusuk').onchange=e=>{f.dusuk=e.target.checked;upd();};
+  refreshResults();
+}
+function bindLeftVat(){
+  const go=()=>{const q=norm(st.vq);const r=q.length<2?[]:B.filter(b=>norm(adr(b)).includes(q)).slice(0,15);
+    $('vres').innerHTML=r.map(b=>`<button class="item" data-id="${b.id}" aria-pressed="${st.vsel&&st.vsel.id===b.id}"><span>${adr(b)}</span><span class="muted small">${b.nf} daire</span></button>`).join('')||(q.length>=2?'<p class="muted small">Adres bulunamadı.</p>':'');
+    $('vres').querySelectorAll('.item').forEach(x=>x.onclick=()=>{st.vsel=B.find(o=>o.id===x.dataset.id);st.flat=null;flyTo(st.vsel);go();render();redraw();});};
+  $('vq').oninput=e=>{st.vq=e.target.value;go();};go();
+}
+function renderLeft(){$('left').innerHTML=st.role==='yon'?leftYon():leftVat();st.role==='yon'?bindLeftYon():bindLeftVat();}
+// ---- SAG PANEL
+function applyThresh(){let f=0,t=0;B.forEach(b=>{b.flag=(b.ch!=null&&b.chn>=st.minN&&b.ch<=-st.th)?1:0;if(b.flag){f++;if(b.t_ret)t++;}});D.stats.flag=f;D.stats.flag_true=t;}
+function thrCtl(){return `<div class="thr"><h3 style="margin-top:0">Değişim eşiğini deneyin</h3><p class="muted small" style="margin-top:0">Hesaplama tarayıcınızda canlı yapılır: eşiği değiştirdiğinizde işaretlenen binalar ve doğruluk anında yeniden hesaplanır.</p>
+  <label class="small">Isınma tüketimi en az <strong id="thv">%${st.th}</strong> düşmüş olsun<input type="range" id="thr" min="10" max="40" step="5" value="${st.th}" aria-label="Düşüş eşiği"></label>
+  <label class="small">Karar en az <strong id="mnv">${st.minN}</strong> dairenin verisine dayansın<span class="muted" style="display:block;font-size:12px">İki kışta da aynı hanenin oturduğu daireler; daha fazla daire daha güvenilir sonuç, ama daha az bina</span><input type="range" id="mnr" min="1" max="4" step="1" value="${st.minN}" aria-label="En az daire"></label>
+  <p class="small" style="margin:8px 0 0"><strong>${fmt(D.stats.flag)}</strong> bina işaretlendi; bunların <strong>${fmt(D.stats.flag_true)}</strong> tanesi simülasyonda gerçekten mantolanmış (isabet %${D.stats.flag?Math.round(D.stats.flag_true/D.stats.flag*100):0}, yakalama %${Math.round(D.stats.flag_true/D.stats.ret*100)}).</p></div>`;}
+function bindThr(){const a=document.getElementById('thr'),m=document.getElementById('mnr');if(!a)return;
+  a.oninput=e=>{st.th=+e.target.value;applyThresh();render();redraw();refreshResults();};m.oninput=e=>{st.minN=+e.target.value;applyThresh();render();redraw();refreshResults();};}
+function home(){
+  const s=D.stats;
+  return `<h2>Yeşilova Mahallesi</h2><p class="muted">Haritada bir binaya dokunun ya da soldan arayın.</p>
+  <div class="note">Bu sayfadaki bütün skorlar şu an tarayıcınızda hesaplandı: ${fmt(s.nf)} dairenin 36 aylık doğalgaz ve elektrik faturası ${fmt(s.ms)} milisaniyede analiz edildi. <button class="back" style="margin:4px 0 0" onclick="rerun()">Hesaplamayı yeniden çalıştır</button></div>
+  <div class="stat"><div><strong>${fmt(s.nb)}</strong><span>konut binası</span></div><div><strong>${fmt(s.nf)}</strong><span>daire</span></div>
+  <div><strong>${fmt(s.analiz)}</strong><span>faturası analiz edilen daire</span></div><div><strong>${fmt(s.flag)}</strong><span>binada son kışta tüketim belirgin düştü (olası iyileştirme)</span></div></div>
+  ${(st.layer==='deg'||st.sim)?thrCtl():''}
+  ${st.sim?(()=>{const tp=s.flag_true,fp=s.flag-s.flag_true,fn=s.ret-s.flag_true;return `<h3>Model ne kadar iyi?</h3>
+  <div class="stat"><div><strong style="color:rgb(58,157,93)">${fmt(tp)}</strong><span>doğru tespit</span></div><div><strong style="color:rgb(233,180,76)">${fmt(fp)}</strong><span>yanlış alarm</span></div><div><strong style="color:rgb(214,69,69)">${fmt(fn)}</strong><span>kaçırılan</span></div><div><strong>%${Math.round(s.auc*100)}</strong><span>ayırt etme gücü (AUC)</span></div></div>
+  <p>Simülasyonda 2023'te <strong>${fmt(s.ret)}</strong> bina mantolandı. Model, faturalara bakarak <strong>${fmt(s.flag)}</strong> binayı işaretledi. İşaretlenenler arasında gerçekten mantolanmış olanların oranı <strong>%${Math.round(tp/s.flag*100)}</strong>. Rastgele ${fmt(s.flag)} bina seçseydik bu oran yalnızca <strong>%${Math.round(s.ret/s.nb*100)}</strong> olurdu.</p>
+  <p class="muted small">Model gerçek cevabı görmez. Hataların çoğu küçük binalarda: kaçırılanların çoğunda karşılaştırılabilecek en fazla bir daire var, yanlış alarmların çoğu da 2–3 daireli binalarda, tek bir hanenin alışkanlık değişikliği yüzünden. 4 ve üzeri daireli binalarda isabet belirgin şekilde yükseliyor.</p>`;})():''}
+  ${st.layer==='deg'?`<div class="note"><strong>Bu katman ne gösteriyor?</strong> Aynı dairelerin 2022/23 ve 2023/24 kışlarını, hava farkını düzelterek karşılaştırır. Mavi binalarda ısınma tüketimi belirgin şekilde düşmüş; bu büyük ihtimalle mantolama, pencere ya da kombi yenilemesi demektir.<br><br><strong>Ne kadar güvenilir?</strong> Belediyenin bilmediği iyileştirmeleri bulmaya çalışırken sınırlıdır: işaretlenen ${fmt(s.flag)} binadan ${fmt(s.flag_true)} tanesi simülasyonda gerçekten mantolanmıştı (mantolanan binalar tüm binaların yalnızca %${Math.round(s.ret/s.nb*100)}'i). Küçük binalarda tek bir hanenin alışkanlık değişikliği de düşüş gibi görünebilir.<br><br><strong>Asıl işe yaradığı yer:</strong> Belediye yalıtım desteği verdiği binaları zaten bilir. Bu binalarda tüketimin düşüp düşmediğine bakmak çok daha güvenilirdir: simülasyonda mantolanan binaların %82'sinde, mantolanmayanların ise yalnızca %22'sinde %10'dan fazla düşüş görüldü. Tasarruf görülmeyen destekli binalar, kötü uygulanmış işlerin adayıdır.</div>`:''}
+  <h3>Nasıl çalışır</h3><p>Her dairenin aylık doğalgaz faturası günlük dış sıcaklıkla karşılaştırılır (PRISM yöntemi). Hava koşullarından arındırılmış ısıtma tüketimi dairenin konumuna göre düzeltilir; binadaki dairelerin ortancası binanın skorunu verir. Bir binaya tıklayıp bir daire seçerek bu hesabı grafikte görebilirsiniz.</p>
+  <h3>Sistem neyi biliyor, neyi tahmin ediyor</h3><p class="muted">Sistem dairelerin ısıtma tipini bilmez; faturanın şeklinden çıkarır: kışın artan doğalgaz → doğalgazla ısınma, kışın artan elektrik → klima. Simülasyonun gerçek cevabına göre bu tahmin dairelerin %${Math.round(s.acc*100)}'inde doğru.</p>`;
+}
+function bldHead(b,back){
+  const h=Object.entries(b.heat).map(([k,v])=>`${v} ${heatTxt[k]||k}`).join(', ');
+  return `${back?`<button class="back" onclick="st.sel=null;render();redraw()">← Mahalle özeti</button>`:''}
+  <h2>${adr(b)}</h2><p class="muted">${b.fl} kat · ${b.nf} daire · ${b.st} · ${b.nz}</p>
+  <dl class="kv"><dt>Yapım yılı</dt><dd>${b.yr}${b.yrr?' (ruhsat)':' (model tahmini)'}</dd><dt>Daireler</dt><dd>${h}</dd><dt>Analiz edilen</dt><dd>${b.nb} daire</dd></dl>
+  <p class="muted small" style="margin-top:8px">Adres, envanter kaydıyla sokak ve alan benzerliğine göre eşleştirildi; yaklaşıktır.</p>`;
+}
+function scoreBlock(b){
+  if(b.s==null)return `<div class="note">Bu binada faturasından ısıtma analizi yapılabilen daire yok (boş, doğalgaz faturası olmayan ya da klimayla ısınan daireler).</div>`;
+  const ex=b.s<=25?'Benzer konumdaki dairelere göre belirgin ısı kaybı. İncelemeye öncelikli aday.':b.s<=50?'Ortalamanın biraz altında verimlilik.':'Benzer binalara göre verimli ya da ortalama.';
+  return `<h3>Verimlilik Skoru</h3><div class="big">${b.s}<span class="muted" style="font-size:18px"> / 100</span></div><div class="scale rev"><span style="left:${b.s}%"></span></div>
+  <p>${ex}</p><p><span class="tag ${b.conf==='Yüksek'?'y':''}">Veri yeterliliği: ${confTxt[b.conf]}</span></p><p class="muted small">Skor ${b.nb} dairenin faturasına ve ${b.yrr?'ruhsattaki':'modelle tahmin edilen'} yapım yılına dayanıyor. 6 ve üzeri daire yeterli, 3–5 sınırlı, 1–2 az sayılır; yapım yılı tahminse bir seviye düşer.</p>`;
+}
+function chgBlock(b){
+  if(b.ch==null)return '';
+  return `<h3>Son kış değişimi</h3><p>2022/23 kışından 2023/24 kışına, taşınma olmayan ${b.chn} dairede hava düzeltmeli ısınma tüketimi <strong>%${b.ch>0?'+':''}${b.ch}</strong> değişti.</p>
+  ${b.flag?`<p><span class="tag c">Olası iyileştirme tespit edildi</span></p><p class="muted small">Mantolama, pencere ya da kombi yenilemesine işaret edebilir. Belediye desteğinin işe yarayıp yaramadığını doğrulamak için kullanılır.</p>`:''}`;
+}
+const confTxt={Yüksek:'Yeterli',Orta:'Sınırlı',Düşük:'Az'};
+const stTxt={bos:'boş (ADNKS)',gazsiz:'doğalgaz faturası yok',klima:'klimayla ısınıyor (tahmin)',belirsiz:'çok düşük ısınma',kombi:'doğalgazla ısınıyor'};
+const heatTxt={kombi:'doğalgazla ısınan',klima:'klimayla ısınan (tahmin)',gazsiz:'doğalgaz faturası yok',bos:'boş',belirsiz:'çok düşük ısınma'};
+function flatRows(b){
+  return `<details class="dz" open><summary>Daireler (${b.flats.length})</summary><p class="muted small">Çubuk, dairenin ısıtma tüketimini binadaki diğer dairelerle karşılaştırır. Ayrıntı için bir daireye dokunun.</p><div class="list" style="margin-top:6px">${b.flats.map(f=>`<button class="item" aria-pressed="${st.fsel===f.i}" onclick="st.fsel=${f.i};render()"><span>${f.fl===0?'Zemin':f.fl+'. kat'} · ${f.pos} · ${f.area} m²${f.mv!=null?`<br><span class="muted small">2023'te yeni hane: %${f.mv>0?'+':''}${f.mv}</span>`:''}</span>${f.rel!=null?`<span class="bar" title="Bina içinde göreli tüketim ${f.rel}"><i style="width:${f.rel}%"></i></span>`:`<span class="muted small">${stTxt[f.st]||''}</span>`}</button>`).join('')}</div></details>`;
+}
+function chart(i){
+  const f=RAW.f,g=f.g[i];
+  if(!g)return `<div class="note">Bu dairenin doğalgaz faturası yok; analiz edilemez.</div>`;
+  const F1=AN.fit1[i],F2=AN.fit2[i],nd=AN.nd;
+  if(!F1)return `<div class="note">Bu dairenin faturası kışın neredeyse hiç artmıyor (${stTxt[AN.cls[i]]||''}); ısıtma analizi yapılmadı.</div>`;
+  const pts=(idx,F)=>idx.map(j=>[AN.HDD[F.k][j],g[j]/nd[j]]);const p1=pts(AN.S1,F1),p2=F2?pts(AN.S2,F2):[];
+  const all=[...p1,...p2],xm=Math.max(...all.map(p=>p[0]),1),ym=Math.max(...all.map(p=>p[1]),1)*1.1;
+  const W=320,H=190,L=38,Bt=28,sx=x=>L+x/xm*(W-L-8),sy=y=>H-Bt-y/ym*(H-Bt-8);
+  const dot=(p,c)=>p.map(q=>`<circle cx="${sx(q[0]).toFixed(1)}" cy="${sy(q[1]).toFixed(1)}" r="3.5" fill="${c}"/>`).join('');
+  const line=(F,c)=>F?`<line x1="${sx(0)}" y1="${sy(F.a).toFixed(1)}" x2="${sx(xm)}" y2="${sy(F.a+F.b*xm).toFixed(1)}" stroke="${c}" stroke-width="2"/>`:'';
+  const ch=F2&&F1.nac>0?Math.round((F2.nac/F1.nac-1)*100):null;
+  return `<p class="muted small">Her nokta bir ayın faturası: sağa gittikçe ay daha soğuk, yukarı gittikçe günlük doğalgaz daha fazla. Doğrunun eğimi binanın ısı kaybını, sıfırdaki yüksekliği sıcak su ve yemeği gösterir.</p>
+  <svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Aylık doğalgaz ile dış sıcaklık ilişkisi" style="background:var(--bg);border-radius:10px">
+  <line x1="${L}" y1="${H-Bt}" x2="${W-6}" y2="${H-Bt}" stroke="currentColor" stroke-opacity=".3"/><line x1="${L}" y1="8" x2="${L}" y2="${H-Bt}" stroke="currentColor" stroke-opacity=".3"/>
+  <text x="${W/2}" y="${H-8}" font-size="10" text-anchor="middle" fill="currentColor" opacity=".7">Günlük ısıtma derece-günü (soğukluk) →</text>
+  <text x="10" y="${H/2}" font-size="10" text-anchor="middle" fill="currentColor" opacity=".7" transform="rotate(-90 10 ${H/2})">kWh/gün</text>
+  ${line(F1,'#B4357E')}${line(F2,'#2BB5A6')}${dot(p1,'#B4357E')}${dot(p2,'#2BB5A6')}</svg>
+  <p class="small" style="margin-top:6px"><span class="sw" style="background:#B4357E"></span>2022/23 kışı <span class="sw" style="background:#2BB5A6;margin-left:10px"></span>2023/24 kışı</p>
+  <dl class="kv small"><dt>Isıtma eğimi</dt><dd>${F1.b.toFixed(2)} kWh / derece-gün: binanın ısı kaybı</dd><dt>Baz yük</dt><dd>${Math.max(F1.a,0).toFixed(1)} kWh/gün: sıcak su ve yemek</dd><dt>Isıtmanın başladığı sıcaklık</dt><dd>${F1.tb} °C</dd><dt>Uyum (R²)</dt><dd>${F1.r2.toFixed(2)}</dd><dt>Hava normalize yıllık ısıtma</dt><dd>${fmt(Math.round(F1.nac))} kWh${ch!==null?` → ${fmt(Math.round(F2.nac))} kWh (%${ch>0?'+':''}${ch})`:''}</dd></dl>`;
+}
+const AY=['Ocak','Şubat','Mart','Nisan','Mayıs','Haziran','Temmuz','Ağustos','Eylül','Ekim','Kasım','Aralık'];
+const ayAdi=m=>AY[+m.slice(5,7)-1]+' '+m.slice(0,4);
+function drawer(){
+  const d=$('drawer');if(!d)return;
+  if(st.fsel==null){d.hidden=true;d.innerHTML='';return;}
+  const i=st.fsel,f=RAW.f,c=AN.cls[i],g=f.g[i],nd=AN.nd,months=RAW.months,rel=AN.rel[i];
+  let h=`<button class="x" aria-label="Kapat" onclick="st.fsel=null;render()">×</button><h2 style="margin-right:40px">${f.fl[i]===0?'Zemin kat':f.fl[i]+'. kat'}</h2><p class="muted">${POS(i)} · ${Math.round(f.ar[i])} m² · ${f.per[i]} kişi (ADNKS)</p>`;
+  const ht={kombi:'doğalgazla ısınıyor',klima:'klimayla ısınıyor',gazsiz:'doğalgaz faturası yok',belirsiz:'çok düşük ısınma',bos:'boş'}[c];
+  if(c!=='bos')h+=`<p class="small"><span class="tag">Kural tabanlı tahmin</span> Isıtma tipi: <strong>${ht}</strong>. Faturanın şeklinden çıkarıldı.</p>`;
+  if(c==='bos')h+=`<div class="note">Bu dairede kayıtlı hane yok. Analize katılmadı.</div>`;
+  else if(c==='gazsiz')h+=`<div class="note">Bu dairenin doğalgaz faturası yok. Sobayla ya da binanın merkezi sistemiyle ısınıyor olabilir; faturadan analiz yapılamaz.</div>`;
+  else if(c==='klima')h+=`<div class="note">Doğalgaz kışın artmıyor ama elektrik artıyor: bu daire büyük ihtimalle <strong>klimayla ısınıyor</strong>. Doğalgaz faturasından ısıtma analizi yapılamaz.</div>`;
+  else if(c==='belirsiz')h+=`<div class="note">Doğalgaz aboneliği var ama kışın tüketim neredeyse hiç artmıyor. Bu hane evini <strong>çok az ısıtıyor</strong> olabilir. Bu durum enerji yoksulluğunun bir işareti olabilir ve yerinde incelenmeye değer.</div>`;
+  if(g){
+    const idx=months.map((m,j)=>j).slice(-24),vals=idx.map(j=>g[j]),mx=Math.max(...vals,1);
+    const win=j=>[12,1,2].includes(+months[j].slice(5,7)),sum=j=>[6,7,8,9].includes(+months[j].slice(5,7));
+    const wv=idx.filter(win).map(j=>g[j]),sv=idx.filter(sum).map(j=>g[j]),avg=a=>a.reduce((x,y)=>x+y,0)/Math.max(a.length,1);
+    h+=`<h3>Son 24 ayın doğalgaz faturası</h3><div class="bars" role="img" aria-label="Aylık doğalgaz tüketimi">${idx.map(j=>`<i class="${win(j)?'w':''}" style="height:${(g[j]/mx*100).toFixed(1)}%" title="${months[j]}: ${fmt(g[j])} kWh"></i>`).join('')}</div>
+    <div class="barlab"><span>${ayAdi(months[idx[0]])}</span><span>Koyu çubuklar: kış ayları</span><span>${ayAdi(months[idx[idx.length-1]])}</span></div>
+    <p style="margin-top:10px">Kış aylarında ortalama <strong>${fmt(Math.round(avg(wv)/10.64))} m³</strong>, yaz aylarında <strong>${fmt(Math.round(avg(sv)/10.64))} m³</strong>. Aradaki farkın büyük kısmı ısınmaya gidiyor.</p>`;
+  }
+  if(c==='kombi'&&rel!=null){
+    const r=Math.round(rel),lv=r>=75?'Binanın ortalamasından yüksek':r>25?'Binanın ortalamasına yakın':'Binanın ortalamasından düşük';
+    h+=`<h3>Komşularına göre ısınma</h3><div class="lvl" style="font-size:21px">${lv}</div><p class="muted">Hava koşulları ve dairenin konumu (en üst kat, zemin) hesaba katıldıktan sonra. Aynı binadaki daireler aynı duvarları paylaştığı için buradaki fark büyük ölçüde hanenin kullanımından gelir.</p>`;
+    if(f.mv[i]>=0&&AN.dl[i]!=null&&AN.fit1[i].nac>=800&&AN.fit2[i].nac>=800){const m=Math.round((Math.exp(AN.dl[i])-1)*100);h+=`<div class="note">${ayAdi(months[f.mv[i]])}'te bu daireye yeni bir hane taşındı ve ısınma tüketimi <strong>%${m>0?'+':''}${m}</strong> değişti. Bina aynı kaldığı için bu fark hanenin alışkanlığından geliyor.</div>`;}
+    h+=`<details class="dz"><summary>Teknik ayrıntı (PRISM)</summary>${chart(i)}</details>`;
+  }
+  d.innerHTML=h;d.hidden=false;
+}
+function srcBlock(b){
+  const acc=Math.round(D.stats.acc*100);
+  const row=(k,v,tag)=>`<div class="srow2"><div><strong>${k}</strong> <span class="tag">${tag}</span></div><div class="muted small">${v}</div></div>`;
+  return `<details class="dz"><summary>Veri kaynakları</summary><div>
+  ${row('Konum ve bina şekli','OpenStreetMap','Gerçek')}
+  ${row('Kat, taşıyıcı sistem, nizam','İBB Yapı Envanteri; haritadaki binayla eşleşmesi yaklaşık','Gerçek')}
+  ${row('Yapım yılı',b.yrr?'Ruhsat tarihi':'Ruhsat tarihi yok; kat, taşıyıcı sistem, nizam, alan ve sokaktan tahmin edildi (Bornova\'da 27.955 binada ortalama hata 6,5 yıl)',b.yrr?'Gerçek':'Model tahmini')}
+  ${row('Daire sayısı ve konumları','Taban alanı ve kat sayısından kuralla; gerçekte tapu kat irtifakından gelir','Kural')}
+  ${row('Isıtma tipi','Hiçbir kayıtta yok; faturanın şeklinden iki eşikli bir kuralla tahmin edildi (simülasyonda %'+acc+' doğru)','Kural tabanlı tahmin')}
+  ${row('Aylık faturalar, kişi sayısı, taşınma','Gerçekte İzmirgaz, Gediz Elektrik ve ADNKS\'den; burada kalibre edilmiş simülasyon','Sentetik')}
+  ${row('Verimlilik Skoru','Faturalardan PRISM ve konum düzeltmesiyle hesaplandı','Hesaplandı')}
+  </div></details>`;
+}
+function simNote(b){if(!st.sim)return '';const k=b.flag&&b.t_ret?['rgb(58,157,93)','Doğru tespit','Model bu binayı işaretledi ve bina simülasyonda gerçekten 2023 sonbaharında mantolandı.']:b.flag?['rgb(233,180,76)','Yanlış alarm','Model bu binayı işaretledi ama bina mantolanmadı.']:b.t_ret?['rgb(214,69,69)','Kaçırılan','Bina mantolandı ama model faturalardan bunu yakalayamadı.']:['rgb(92,96,134)','Doğru ret','Bina mantolanmadı ve model de işaretlemedi.'];return `<div class="note" style="border-left-color:${k[0]}"><strong>${k[1]}.</strong> ${k[2]}${b.t_mant?' (Bina simülasyonun başından beri mantolu.)':''}</div>`;}
+function flatView(b,f){
+  if(f.st!=='analiz')return `<div class="note">${f.st==='bos'?'Bu dairede kayıtlı hane yok.':f.st==='klima'?'Daireniz klimayla ısınıyor; ısınma doğalgaz faturasında görünmediği için analiz yapılamıyor. Elektrik modülü bu durum için planlanıyor.':'Dairenizin ısınması doğalgaz faturasında görünmüyor ('+stTxt[f.st]+'), analiz yapılamıyor.'}</div>`;
+  const nAn=b.flats.filter(x=>x.rel!=null).length;
+  let h='';
+  if(nAn>=3){h+=`<h3>Komşularınıza göre</h3><p>Konum farkı düzeltildikten sonra, binanızdaki dairelere göre ısıtma tüketiminiz:</p><div class="big">${f.rel}</div><div class="scale"><span style="left:${f.rel}%"></span></div>
+    <p>${f.rel>=80?'Komşularınızdan belirgin şekilde fazla. Bina aynı olduğu için fark büyük ölçüde kullanımdan geliyor olabilir: termostat ayarı, ısıtılan oda sayısı, ısıtma saatleri.':f.rel<=20?'Komşularınızdan belirgin şekilde az. Evinizi yeterince ısıtamıyorsanız destek programlarına başvurabilirsiniz.':'Komşularınıza yakın.'}</p>
+    <p class="muted small">Karşılaştırma binadaki en az 3 dairenin anonim özetine dayanır, kimsenin tüketimi tek tek gösterilmez.</p>`;}
+  else h+=`<div class="note">Binanızda karşılaştırma yapmak için yeterli daire yok (gizlilik için en az 3 daire gerekir).</div>`;
+  if(f.mv!=null)h+=`<div class="note">Bu daireye 2023'te taşındınız. Aynı dairede tüketim %${f.mv>0?'+':''}${f.mv} değişti. Bina aynı kaldığı için bu fark kullanım alışkanlığını gösterir.</div>`;
+  return h;
+}
+function render(){
+  legend();
+  const P=$('panel');
+  if(st.role==='vat'){
+    const b=st.vsel;
+    if(!b){P.innerHTML=`<h2>Vatandaş görünümü</h2><p class="muted">Soldaki panelden adresinizi arayın.</p>`;return;}
+    const own=b.nf===1;
+    let h=`<h2>${adr(b)}</h2><p class="muted">${b.nf} daire · ${b.fl} kat</p>`;
+    if(own){h+=`<p><span class="tag y">Binanın tamamı size ait</span></p>`+scoreBlock(b)+chgBlock(b)+flatView(b,b.flats[0]);}
+    else{h+=`<h3>Dairenizi seçin</h3><p class="muted small">Gerçek sistemde bu adım e-Devlet adres kaydından otomatik yapılır; diğer dairelerin sonuçlarını göremezsiniz.</p><div class="list scrollbox">${b.flats.map((f,i)=>`<button class="item" aria-pressed="${st.flat===i}" onclick="st.flat=${i};render()"><span>${f.fl===0?'Zemin':f.fl+'. kat'} · ${f.pos} · ${f.area} m²</span></button>`).join('')}</div>`;
+      if(st.flat!=null)h+=flatView(b,b.flats[st.flat]);}
+    P.innerHTML=h;return;
+  }
+  const b=st.sel;
+  if(!b){st.fsel=null;drawer();P.innerHTML=home();bindThr();return;}
+  if(st.fsel!=null&&RAW.f.bi[st.fsel]!==RAW.b.findIndex(x=>x.id===b.id))st.fsel=null;
+  P.innerHTML=bldHead(b,true)+simNote(b)+scoreBlock(b)+chgBlock(b)+flatRows(b)+srcBlock(b);
+  drawer();
+}
+function setRole(r){
+  st.role=r;st.flat=null;
+  document.querySelectorAll('#roles button').forEach(y=>y.setAttribute('aria-pressed',y.dataset.r===r));
+  $('layerGrp').style.display=r==='yon'?'':'none';$('simLbl').style.display=r==='yon'?'':'none';
+  renderLeft();render();redraw();
+}
+document.querySelectorAll('#roles button').forEach(x=>x.onclick=()=>setRole(x.dataset.r));
+document.querySelectorAll('#layers button').forEach(x=>x.onclick=()=>{st.layer=x.dataset.l;document.querySelectorAll('#layers button').forEach(y=>y.setAttribute('aria-pressed',y===x));render();redraw();});
+$('d3').onchange=e=>{st.d3=e.target.checked;setView({pitch:st.d3?45:0,bearing:st.d3?vs.bearing:0});redraw();};
+$('sim').onchange=e=>{st.sim=e.target.checked;if(st.sim&&st.layer!=='deg'){st.layer='deg';document.querySelectorAll('#layers button').forEach(y=>y.setAttribute('aria-pressed',y.dataset.l==='deg'));}render();redraw();};
+$('toggleLeft').onclick=()=>{
+  const m=$('map'),W=m.clientWidth,H=m.clientHeight,lw=$('left').getBoundingClientRect().width||330;
+  const closing=!$('main').classList.contains('lclosed'),d=closing?lw:-330;
+  let target=null;
+  try{if(deckgl&&W>50){const vp=new deck.WebMercatorViewport({...vs,width:W,height:H});target=vp.unproject([W/2-d/2,H/2]);}}catch(e){}
+  const c=$('main').classList.toggle('lclosed');$('toggleLeft').setAttribute('aria-expanded',!c);
+  if(target)requestAnimationFrame(()=>setView({longitude:target[0],latitude:target[1]}));
+};
+
+
+function drawHero(){const c=document.getElementById('heroMap');if(!c||!B.length)return;const W=c.clientWidth,H=c.clientHeight;if(!W)return;const dpr=window.devicePixelRatio||1;c.width=W*dpr;c.height=H*dpr;const g=c.getContext('2d');g.setTransform(dpr,0,0,dpr,0,0);g.fillStyle='#10133A';g.fillRect(0,0,W,H);
+  const k=Math.cos(38.436*Math.PI/180),x0=27.19619,x1=27.21204,y0=38.42763,y1=38.44453,sw=(x1-x0)*k,sh=(y1-y0),sc=Math.min((W-40)/sw,(H-30)/sh),ox=(W-sw*sc)/2,oy=(H-sh*sc)/2;
+  const P=p=>[ox+(p[0]-x0)*k*sc,oy+(y1-p[1])*sc];
+  g.strokeStyle='rgba(120,126,190,.35)';g.lineWidth=1;D.s.forEach(st=>{g.beginPath();st.p.forEach((q,i)=>{const r=P(q);i?g.lineTo(r[0],r[1]):g.moveTo(r[0],r[1]);});g.stroke();});
+  B.forEach(b=>{g.beginPath();b.poly.forEach((q,i)=>{const r=P(q);i?g.lineTo(r[0],r[1]):g.moveTo(r[0],r[1]);});g.closePath();g.fillStyle=b.s==null?'rgb(70,74,110)':`rgb(${ryg(b.s/100)})`;g.fill();});
+}
+window.addEventListener('resize',()=>{if(document.getElementById('p-anasayfa').classList.contains('on'))drawHero();});
+
+const vst={q:'',b:null,i:null,busy:false};
+function vRender(){const q=document.getElementById('vq2');if(!q||q.dataset.bound)return;q.dataset.bound=1;
+  q.oninput=e=>{vst.q=e.target.value;vst.b=null;vst.i=null;vList();vFlatSel();};
+  document.getElementById('vflat').onchange=e=>{vst.i=e.target.value===''?null:+e.target.value;document.getElementById('vreq').disabled=vst.i==null;};
+  document.getElementById('vreq').onclick=vRequest;}
+function vList(){const n=norm(vst.q),el=document.getElementById('vres2');if(vst.b){el.innerHTML='';return;}
+  const r=n.length<2?[]:B.filter(b=>norm(adr(b)).includes(n)).slice(0,8);
+  el.innerHTML=r.map(b=>`<button class="item" data-id="${b.id}"><span>${adr(b)}</span><span class="muted small">${b.nf} daire</span></button>`).join('')||(n.length>=2?'<p class="muted small">Adres bulunamadı.</p>':'');
+  el.querySelectorAll('.item').forEach(x=>x.onclick=()=>{vst.b=B.find(o=>o.id===x.dataset.id);document.getElementById('vq2').value=adr(vst.b);vst.q=adr(vst.b);vst.i=vst.b.nf===1?vst.b.flats[0].i:null;vList();vFlatSel();});}
+function vFlatSel(){const w=document.getElementById('vflatWrap'),sel=document.getElementById('vflat'),btn=document.getElementById('vreq'),b=vst.b;
+  if(!b){w.hidden=true;btn.disabled=true;return;}
+  if(b.nf===1){w.hidden=true;btn.disabled=false;return;}
+  w.hidden=false;sel.innerHTML='<option value="">Dairenizi seçin</option>'+b.flats.map(f=>`<option value="${f.i}">${f.fl===0?'Zemin kat':f.fl+'. kat'} · ${f.pos} · ${f.area} m²</option>`).join('');btn.disabled=true;}
+function vRequest(){if(vst.busy||vst.i==null)return;vst.busy=true;
+  const steps=['Kimliğiniz e-Devlet ile doğrulanıyor','Talebiniz belediyeye iletildi','Adres kaydınız eşleştiriliyor','İzmirgaz ve Gediz Elektrik faturalarınız alınıyor','Analiziniz hazırlanıyor'];
+  const L=document.getElementById('vload'),S=document.getElementById('vsteps'),P=document.getElementById('vprog');
+  document.getElementById('vout2').hidden=true;L.hidden=false;document.getElementById('vreq').disabled=true;
+  S.innerHTML=steps.map(t=>`<li>${t}</li>`).join('');const li=[...S.children];let k=0;P.style.width='0%';
+  const tick=()=>{li.forEach((x,j)=>x.className=j<k?'done':j===k?'now':'');P.style.width=(k/steps.length*100)+'%';
+    if(k<steps.length){k++;setTimeout(tick,1300);}else{setTimeout(()=>{L.hidden=true;vst.busy=false;document.getElementById('vreq').disabled=false;vResult();},500);}};tick();}
+let SIM=null;
+function simGroups(){const f=RAW.f,G={},L=RAW.months.length;const key=i=>(f.top[i]?'t':f.gr[i]?'g':'m')+(f.ar[i]<60?0:f.ar[i]<90?1:f.ar[i]<120?2:3);
+  for(let i=0;i<f.bi.length;i++){const g=f.g[i];if(!g||f.per[i]===0)continue;let t=0;for(let j=L-12;j<L;j++)t+=g[j];(G[key(i)]=G[key(i)]||[]).push(t/f.ar[i]);}
+  for(const k in G)G[k].sort((a,b)=>a-b);SIM={G,key};}
+function q(a,p){const x=(a.length-1)*p,l=Math.floor(x),h=Math.ceil(x);return a[l]+(a[h]-a[l])*(x-l);}
+function vResult(){const el=document.getElementById('vout2'),b=vst.b,i=vst.i,f=RAW.f,c=AN.cls[i],g=f.g[i],months=RAW.months,rel=AN.rel[i],nAn=b.flats.filter(x=>x.rel!=null).length;
+  const ht={kombi:'Doğalgazla (kombi)',klima:'Büyük ihtimalle klimayla',gazsiz:'Doğalgaz faturası yok (soba ya da merkezi sistem olabilir)',belirsiz:'Doğalgaz var, ama kışın neredeyse hiç artmıyor',bos:'Kayıtlı hane yok'}[c];
+  const row=(k,v,src)=>`<div class="vrow"><span class="muted">${k}</span><span>${v}${src?` <span class="tag">${src}</span>`:''}</span></div>`;
+  let h=`<div class="card"><p class="small" style="margin:0"><span class="tag y">Talebiniz alındı</span> Verileriniz hazır.</p><h2 style="margin-top:10px">${adr(b)}</h2><p class="muted">${f.fl[i]===0?'Zemin kat':f.fl[i]+'. kat'} · ${POS(i)}</p></div>`;
+  h+=`<div class="card" style="margin-top:14px"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><h3 style="margin:0">Bina ve daire bilgileriniz</h3>
+    <span class="repw"><button class="repb" onclick="this.parentNode.querySelector('.tip').classList.add('show');setTimeout(()=>this.parentNode.querySelector('.tip').classList.remove('show'),3500)">Bildir</button><span class="qm" tabindex="0" role="button" aria-label="Bildir ne işe yarar?">?<span class="tip" role="tooltip">Bilgilerinizde hata varsa bildirin. Gerçek sistemde düzeltme talebiniz belediyeye iletilir, incelendikten sonra kayıt güncellenir ve size bildirilir. Demoda bu düğme çalışmıyor.</span></span></span></div>
+    ${row('Yapım yılı',b.yr,b.yrr?'Ruhsat kaydı':'Model tahmini')}${row('Kat sayısı',b.fl,'Yapı envanteri')}${row('Taşıyıcı sistem',b.st,'Yapı envanteri')}${row('Yapı nizamı',b.nz,'Yapı envanteri')}
+    ${row('Dış cephe yalıtımı (mantolama)','Kayıtlarda bilgi yok','')}${row('Dairenizin alanı',Math.round(f.ar[i])+' m²','')}${row('Hanede kayıtlı kişi',f.per[i],'ADNKS')}${row('Isıtma',ht,'Kural tabanlı tahmin')}</div>`;
+  if(g){const idx=months.map((m,j)=>j).slice(-24),mx=Math.max(...idx.map(j=>g[j]),1),win=j=>[12,1,2].includes(+months[j].slice(5,7)),sum=j=>[6,7,8,9].includes(+months[j].slice(5,7)),avg=a=>a.reduce((x,y)=>x+y,0)/Math.max(a.length,1),yr=Math.round(idx.slice(-12).reduce((x,j)=>x+g[j],0)/10.64);
+    h+=`<div class="card" style="margin-top:14px"><h3 style="margin-top:0">Doğalgaz kullanımınız</h3><div class="stat"><div><strong>${fmt(yr)} m³</strong><span>son 12 ay</span></div><div><strong>${fmt(Math.round(avg(idx.filter(win).map(j=>g[j]))/10.64))} m³</strong><span>kış aylarında aylık ortalama</span></div></div>
+      <div class="bars" style="height:150px">${idx.map(j=>`<i class="${win(j)?'w':''}" style="height:${(g[j]/mx*100).toFixed(1)}%" title="${months[j]}: ${fmt(Math.round(g[j]/10.64))} m³"></i>`).join('')}</div><div class="barlab"><span>${ayAdi(months[idx[0]])}</span><span>Koyu çubuklar: kış ayları</span><span>${ayAdi(months[idx[idx.length-1]])}</span></div></div>`;}
+  if(!SIM)simGroups();
+  if(g&&f.per[i]>0){const arr=SIM.G[SIM.key(i)]||[];if(arr.length>=10){const A=f.ar[i],L=months.length,m3=v=>v*A/10.64;let t=0;for(let j=L-12;j<L;j++)t+=g[j];
+    const me=t/10.64,p25=m3(q(arr,.25)),p50=m3(q(arr,.5)),p75=m3(q(arr,.75)),lo=m3(q(arr,.05)),hi=m3(q(arr,.95)),mn=Math.max(0,Math.min(lo,me)*0.85),mx=Math.max(hi,me)*1.08,pos=v=>((v-mn)/(mx-mn)*100).toFixed(1)+'%';
+    const cmp=me>p75?'Benzer dairelerin çoğundan fazla doğalgaz kullanıyorsunuz.':me<p25?'Benzer dairelerin çoğundan az doğalgaz kullanıyorsunuz.':'Benzer dairelere yakın doğalgaz kullanıyorsunuz.';
+    h+=`<div class="card" style="margin-top:14px"><h3 style="margin-top:0">Benzer dairelere göre</h3><div class="lvl" style="font-size:20px">${cmp}</div><p class="muted small">Son 12 ayın doğalgaz tüketimi. Karşılaştırma, Yeşilova'da sizinkine benzer büyüklükte ve konumda (${f.top[i]?'en üst kat':f.gr[i]?'zemin kat':'ara kat'}) ${fmt(arr.length)} daireye dayanır ve dairenizin büyüklüğüne göre ölçeklenir.</p>
+    <div class="nline"><div class="band" style="left:${pos(p25)};width:calc(${pos(p75)} - ${pos(p25)})"></div><div class="med" style="left:${pos(p50)}"><span>Benzer dairelerin ortancası<br><strong>${fmt(Math.round(p50))} m³</strong></span></div><div class="me" style="left:${pos(me)}"><span>Siz<br><strong>${fmt(Math.round(me))} m³</strong></span></div></div>
+    <p class="small"><span class="sw" style="background:color-mix(in srgb,var(--ink) 18%,transparent)"></span>Benzer dairelerin yarısı ${fmt(Math.round(p25))}–${fmt(Math.round(p75))} m³ arasında.</p>
+    <p class="muted small">Gizlilik: Karşılaştırma ${fmt(arr.length)} dairenin toplu istatistiğine dayanır; hiçbir hanenin tüketimi tek başına gösterilmez.</p></div>`;}}
+  let lv=null;
+  if(c==='kombi'&&rel!=null&&nAn>=3){const r=Math.round(rel);lv=r>=75?'yuksek':r>25?'orta':'dusuk';
+    h+=`<div class="card" style="margin-top:14px"><h3 style="margin-top:0">Binanızdaki ortalamaya göre</h3><div class="lvl" style="font-size:22px">${{yuksek:'Ortalamadan daha fazla ısınıyorsunuz',orta:'Ortalamaya yakın ısınıyorsunuz',dusuk:'Ortalamadan daha az ısınıyorsunuz'}[lv]}</div>
+      <div class="cmpbar"><span style="left:${r}%"></span></div><div class="barlab"><span>Daha az</span><span>Bina ortalaması</span><span>Daha fazla</span></div>
+      <p class="muted small" style="margin-top:10px">Hava koşulları ve dairenizin konumu (en üst kat, zemin) hesaba katıldı. Karşılaştırma binanızdaki ${nAn} dairenin anonim özetine dayanır; kimsenin tüketimi tek tek gösterilmez.</p></div>`;}
+  else if(c==='kombi')h+=`<div class="card" style="margin-top:14px"><p class="muted" style="margin:0">Binanızda karşılaştırma için yeterli daire yok; gizlilik için en az 3 daire gerekir.</p></div>`;
+  if(b.nf===1&&b.s!=null)h+=`<div class="card" style="margin-top:14px"><h3 style="margin-top:0">Binanızın Verimlilik Skoru</h3><div class="big">${b.s}<span class="muted" style="font-size:18px"> / 100</span></div><div class="scale rev"><span style="left:${b.s}%"></span></div><p class="muted small">Binanın tamamı size ait olduğu için bina skoru da gösteriliyor. 100 en verimli.</p></div>`;
+  const tips={yuksek:['Termostatı 1°C düşürmek ısınma tüketimini belirgin şekilde azaltır.','Kullanmadığınız odaların radyatörlerini kısın, kapılarını kapalı tutun.','Kombinizin yıllık bakımını yaptırın.','Pencere ve kapılardaki hava sızıntılarını kontrol edin.'],orta:['Kombinizin yıllık bakımını yaptırın.','Radyatörlerin önünü kapatmayın; arkasına yansıtıcı levha koyabilirsiniz.','Gece ve evde olmadığınız saatlerde termostatı düşürün.'],dusuk:['Tüketiminiz düşük. Evinizi yeterince ısıtamıyorsanız belediyenin ve sosyal yardım vakıflarının destek programlarına başvurabilirsiniz.']};
+  const t=c==='belirsiz'?['Evinizi yeterince ısıtamıyorsanız belediyenin ve sosyal yardım vakıflarının destek programlarına başvurabilirsiniz.','Kiracıysanız binanın yalıtımı için ev sahibinizle ve yöneticinizle görüşebilirsiniz.']:lv?tips[lv]:c==='kombi'?tips.orta:null;
+  if(t)h+=`<div class="card" style="margin-top:14px"><h3 style="margin-top:0">Neler yapabilirsiniz</h3><ul class="srcl">${t.map(x=>`<li>${x}</li>`).join('')}</ul></div>`;
+  h+=`<p class="muted small" style="margin-top:12px">Bu sayfada yalnızca sizin dairenizin bilgileri gösterilir. Binanın tamamı size ait değilse bina skoru ve diğer dairelerin bilgileri gösterilmez.</p>`;
+  el.innerHTML=h;el.hidden=false;el.scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'start'});}
+
+(function(){const b=document.getElementById('deneBtn'),x=document.getElementById('deneBox');if(!b)return;b.onclick=()=>{const o=!x.classList.contains('open');x.classList.toggle('open',o);b.setAttribute('aria-expanded',o);x.setAttribute('aria-hidden',!o);};})();
+let mapReady=false;
+function rerun(){runAnalysis();if(st.sel)st.sel=B.find(x=>x.id===st.sel.id)||null;renderLeft();render();redraw();}
+runAnalysis();
+function route(){let h=(location.hash||'#anasayfa').slice(1);if(!['anasayfa','harita','vatandas','nasil','vizyon'].includes(h))h='anasayfa';
+  document.querySelectorAll('.page').forEach(p=>p.classList.toggle('on',p.id==='p-'+h));
+  document.querySelectorAll('.navl a').forEach(a=>{if(a.dataset.p===h)a.setAttribute('aria-current','page');else a.removeAttribute('aria-current');});
+  if(h==='harita'&&!mapReady){mapReady=true;renderLeft();render();requestAnimationFrame(initMap);}
+  if(h==='anasayfa')requestAnimationFrame(drawHero);
+  if(h==='vatandas')vRender();
+  if(h!=='harita')window.scrollTo(0,0);}
+window.addEventListener('hashchange',route);route();
+
+</script>
+<script>
+// Veri dosyasi: once ayni klasordeki live_data.json, olmazsa GitHub'daki kopya
+const LT_DATA_URLS=['live_data.json','https://raw.githubusercontent.com/KULLANICI_ADI/leaktrace/main/data/live_data.json'];
+(async function(){
+  for(const u of LT_DATA_URLS){
+    try{const r=await fetch(u);if(!r.ok)continue;window.__LT_DATA=await r.json();
+      const sc=document.createElement('script');sc.textContent=document.getElementById('ltMain').textContent;document.body.appendChild(sc);
+      document.getElementById('ltLoad').remove();return;}catch(e){}
+  }
+  document.getElementById('ltLoad').textContent='Veri dosyası yüklenemedi. live_data.json dosyasının bulunduğundan emin olun.';
+})();
+</script>
+</body>
+</html>
